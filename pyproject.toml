@@ -1,0 +1,24 @@
+[project]
+name = "radio_curator"
+version = "0.0.1
+description = "BBC radio show downloader and playlist curator"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "google-api-python-client>=2.187.0",
+    "google-auth-httplib2>=0.3.0",
+    "google-auth-oauthlib>=1.2.3",
+    "requests>=2.32.5",
+    "ytmusicapi>=1.11.4",
+]
+
+[project.scripts]
+gp2ytm = "src.gp2ytm.main:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "mock>=4.0.0",
+]
