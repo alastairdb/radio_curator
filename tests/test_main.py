@@ -1,6 +1,5 @@
 """Tests for main entry point."""
 
-import pytest
 from unittest.mock import patch
 import sys
 from io import StringIO

@@ -68,8 +68,8 @@ class TestCreateYoutubePlaylist:
 
     @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_credentials")
     @patch("src.gp2ytm.bbc_playlist_to_ytmusic.build")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track")
+    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
     @patch("src.gp2ytm.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
     def test_create_youtube_playlist_success(
         self, mock_add_tracks, mock_search_track, mock_create_playlist, 
@@ -79,7 +79,7 @@ class TestCreateYoutubePlaylist:
         # Setup mocks
         mock_get_credentials.return_value = Mock()
         mock_build.return_value = mock_youtube_service
-        mock_create_playlist.return_value = {'id': 'test_playlist_id'}
+        mock_create_playlist.return_value = ('test_playlist_id', True)
         mock_search_track.return_value = 'test_video_id'
         mock_add_tracks.return_value = ([{'id': 'playlist_item_id'}], [])
         
@@ -97,8 +97,8 @@ class TestCreateYoutubePlaylist:
 
     @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_credentials")
     @patch("src.gp2ytm.bbc_playlist_to_ytmusic.build")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track")
+    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
     def test_create_youtube_playlist_not_found(
         self, mock_search_track, mock_create_playlist, 
         mock_build, mock_get_credentials, mock_youtube_service
@@ -107,7 +107,7 @@ class TestCreateYoutubePlaylist:
         # Setup mocks
         mock_get_credentials.return_value = Mock()
         mock_build.return_value = mock_youtube_service
-        mock_create_playlist.return_value = {'id': 'test_playlist_id'}
+        mock_create_playlist.return_value = ('test_playlist_id', True)
         mock_search_track.return_value = None  # Track not found
         
         tracks = [{"artist": "Unknown Artist", "title": "Unknown Track"}]
@@ -166,4 +166,4 @@ class TestMain:
         sys.stderr = sys.__stderr__
         
         output = captured_output.getvalue()
-        assert 'Usage: python bbc_playlist_to_ytmusic.py' in output
+        assert 'usage: bbc_playlist_to_ytmusic.py' in output

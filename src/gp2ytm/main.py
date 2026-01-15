@@ -9,7 +9,7 @@ def main():
     """Main entry point."""
     if len(sys.argv) < 2:
         print("Usage: python -m gp2ytm <command>")
-        print("Available commands: ytmusic-api, bbc-playlist")
+        print("Available commands: ytmusic-api, bbc")
         return
     
     command = sys.argv[1]
@@ -18,13 +18,17 @@ def main():
         # Remove the command from argv and pass the rest to the module
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         ytmusic_api_main()
-    elif command == "bbc-playlist":
+    elif command == "bbc":
         # Remove the command from argv and pass the rest to the module
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        bbc_playlist_main()
+    elif command == "bbc-playlist":
+        # Keep backward compatibility
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         bbc_playlist_main()
     else:
         print(f"Unknown command: {command}")
-        print("Available commands: ytmusic-api, bbc-playlist")
+        print("Available commands: ytmusic-api, bbc")
 
 if __name__ == "__main__":
     main()
