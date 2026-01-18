@@ -15,8 +15,6 @@ This tool (semi-)automatically converts BBC radio program playlists to YouTube M
 
 1. Python 3.13 or higher
 2. Google account with YouTube Music access
-3. Google Cloud Platform project with YouTube Data API enabled
-4. OAuth 2.0 credentials file (`credentials.json`) from Google Cloud Platform
 
 ## Installation
 
@@ -31,11 +29,20 @@ This tool (semi-)automatically converts BBC radio program playlists to YouTube M
    pip install -e ".[dev,test]"
    ```
 
-3. Set up Google API credentials:
-   - Create a Google Cloud Platform project
-   - Enable the YouTube Data API v3
-   - Create OAuth 2.0 credentials
-   - Download the credentials file as `credentials.json` in the project directory
+3. Set up YouTube Music authentication:
+   ```bash
+   gp2ytm ytmusic-api setup
+   ```
+   
+   This will guide you through copying your browser's authentication headers. Follow these steps:
+   - Open YouTube Music (https://music.youtube.com) in your browser and log in
+   - Open Developer Tools (F12 or Ctrl+Shift+I)
+   - Go to the Network tab
+   - Filter by `/browse` in the search bar
+   - Scroll down or click Library to trigger a request
+   - Find a POST request to `browse?...` with status 200
+   - Right-click and copy the request headers
+   - Paste them when prompted by the setup command
 
 ## Usage
 
@@ -80,6 +87,7 @@ gp2ytm ytmusic-api <command> [arguments]
 ```
 
 Available commands:
+- `setup` - Set up browser authentication (run this first)
 - `create-playlist <title> [description] [privacy]` - Create a new playlist
 - `search-track <query>` - Search for a track and return its video ID
 - `add-track <playlist_id> <video_id>` - Add a track to a playlist
@@ -87,7 +95,8 @@ Available commands:
 
 Examples:
 ```bash
-gp2ytm ytmusic-api create-playlist "My Playlist" "Description" "private"
+gp2ytm ytmusic-api setup
+gp2ytm ytmusic-api create-playlist "My Playlist" "Description" "PRIVATE"
 gp2ytm ytmusic-api search-track "Artist - Song Title"
 gp2ytm ytmusic-api add-track "playlist_id" "video_id"
 gp2ytm ytmusic-api print-tracks "Artist1 - Song1, Artist2 - Song2"
@@ -95,11 +104,12 @@ gp2ytm ytmusic-api print-tracks "Artist1 - Song1, Artist2 - Song2"
 
 ## First Run
 
-On first run, you'll need to authenticate with Google:
-1. The tool will open a browser window
-2. Sign in to your Google account
-3. Grant permission to manage your YouTube account
-4. The tool will save an authentication token for future use
+On first run, you'll need to authenticate with YouTube Music using browser headers:
+1. Run `gp2ytm ytmusic-api setup` to start the authentication process
+2. Follow the prompts to copy your browser's request headers from YouTube Music
+3. The tool will save the authentication headers for future use (valid for ~2 years)
+
+The browser authentication method doesn't require Google Cloud Platform setup and has no rate limits.
 
 ## How It Works
 

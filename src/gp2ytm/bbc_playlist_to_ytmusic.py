@@ -3,18 +3,16 @@ import sys
 import time
 import argparse
 import json
-import os
 from typing import List, Dict, Tuple, Any, cast
-from googleapiclient.discovery import Resource  # type: ignore
 
 import requests  
 from bs4 import BeautifulSoup, Tag
 
 # Import the YouTube API functions from the same package
-from .ytmusic_api import get_credentials, build, search_track_with_cache, create_or_find_playlist, add_tracks_to_playlist, get_video_details
+from .ytmusic_api import get_ytmusic, search_track_with_cache, create_or_find_playlist, add_tracks_to_playlist, get_artist_names, normalize_text
 
 
-def parse_bbc_playlist(program_id: str) -> Tuple[str, List[Dict[str, str]]]:
+def parse_bbc_playlist(program_id: str) -> Tuple[str, List[Dict[str, str]], str, str]:
     """Scrape BBC programme page and extract playlist information"""
     url = f"https://www.bbc.co.uk/programmes/{program_id}"
 
@@ -28,7 +26,7 @@ def parse_bbc_playlist(program_id: str) -> Tuple[str, List[Dict[str, str]]]:
         response.raise_for_status()
     except Exception as e:
         print(f"Error fetching BBC page: {e}", file=sys.stderr)
-        return "", []
+        return "", [], "", ""
 
     soup = BeautifulSoup(response.text, "html.parser")
 
@@ -45,130 +43,105 @@ def parse_bbc_playlist(program_id: str) -> Tuple[str, List[Dict[str, str]]]:
         else f"BBC Playlist {program_id}"
     )
 
+    # Extract broadcast date from broadcast-event__date span
+    broadcast_date = ""
+    date_element = soup.find("span", class_="broadcast-event__date")
+    if date_element:
+        date_text = date_element.get_text(strip=True)
+        # Parse date like "Sat 27 Dec 2025" and convert to ISO format
+        try:
+            from datetime import datetime
+            # Remove day of week and parse
+            date_parts = date_text.split()
+            if len(date_parts) >= 4:
+                # Format: "Sat 27 Dec 2025"
+                day = date_parts[1]
+                month = date_parts[2]
+                year = date_parts[3]
+                date_str = f"{day} {month} {year}"
+                parsed_date = datetime.strptime(date_str, "%d %b %Y")
+                broadcast_date = parsed_date.strftime("%Y-%m-%d")
+        except Exception:
+            # If parsing fails, leave broadcast_date empty
+            pass
+
+    # Extract description from synopsis-toggle__long div
+    description = ""
+    synopsis_long = soup.find("div", class_="synopsis-toggle__long")
+    if synopsis_long and  isinstance(synopsis_long, Tag):
+        # Find all p elements within the synopsis-toggle__long div
+        p_elements = synopsis_long.find_all("p")
+        if p_elements:
+            # Extract text from all p elements and join with newlines
+            description_parts = []
+            for p in p_elements:
+                # Get text content and clean up HTML entities
+                text = p.get_text(separator=" ", strip=True)
+                if text:
+                    description_parts.append(text)
+            description = "\n\n".join(description_parts)
+
     # Find the "Music Played" section and specifically look in segments-list div
     tracks: List[Dict[str, str]] = []
     music_section = soup.find("h2", string=re.compile(r"Music Played", re.I))
+    if not music_section:
+        raise ValueError("Expecting 'Music Played' section")
 
-    if music_section:
-        # Find the segments-list container
-        segments_list = soup.find("div", class_="segments-list")
+    # Find the segments-list container
+    segments_list = soup.find("div", class_="segments-list")
+    if not (segments_list and isinstance(segments_list, Tag)):
+        raise ValueError("Expecting a track listing")
 
-        if segments_list and isinstance(segments_list, Tag):
+    # First, try to find tracks using the specific BBC music segment structure
+    music_items = cast(Tag, segments_list).find_all("li", class_="segments-list__item--music")
+    if not music_items:
+        raise ValueError("Cannot find music tracks")
 
-            # First, try to find tracks using the specific BBC music segment structure
-            music_items = cast(Tag, segments_list).find_all("li", class_="segments-list__item--music")
-            
-            if music_items:
-                for item in music_items:
-                    # Look for the segment__track div which contains artist and title
-                    track_div = item.find("div", class_="segment__track")
-                    if not track_div:
-                        continue
-                    
-                    # Find artist from span with class="artist"
-                    artist_span = track_div.find("span", class_="artist")
-                    artist = artist_span.get_text(strip=True) if artist_span else ""
-                    
-                    # Find title from the span inside p.no-margin that follows h3
-                    title_span = None
-                    h3_element = track_div.find("h3")
-                    if h3_element:
-                        # Find the p element that follows h3
-                        p_element = h3_element.find_next("p", class_="no-margin")
-                        if p_element:
-                            # Get the span inside the p element
-                            title_span = p_element.find("span")
-                    
-                    title = title_span.get_text(strip=True) if title_span else ""
-                    
-                    # Only add if we have both artist and title
-                    if artist and title and "live at maida vale" not in title.lower():
-                        tracks.append({"artist": artist, "title": title})
-            
-            # If no tracks found with the specific structure, fall back to the generic approach
+    for item in music_items:
+        # Look for the segment__track div which contains artist and title
+        track_div = item.find("div", class_="segment__track")
+        if not track_div:
+            continue
 
-            # Only proceed with the fallback approach if no tracks were found
-            if not tracks:
-                track_elements = cast(Tag, segments_list).find_all(["li", "div"], recursive=False)
+        # Find artist from span with class="artist"
+        artist_span = track_div.find("span", class_="artist")
+        artist = artist_span.get_text(strip=True) if artist_span else ""
 
-                for element in track_elements:
-                    # Look for artist and track information
-                    text_content = element.get_text(separator=" ", strip=True)
+        # Find title from the span inside p.no-margin that follows h3
+        title_span = None
+        h3_element = track_div.find("h3")
+        if h3_element:
+            # Find the p element that follows h3
+            p_element = h3_element.find_next("p", class_="no-margin")
+            if p_element:
+                # Get the span inside the p element
+                title_span = p_element.find("span")
 
-                    # Skip empty elements
-                    if not text_content:
-                        continue
+        title = title_span.get_text(strip=True) if title_span else ""
 
-                    # Try to extract artist and track from structured data
-                    artist_element = element.find(["h3", "strong"])
-                    artist = artist_element.get_text(strip=True) if artist_element else ""
+        # Only add if we have both artist and title
+        if artist and title and "live at maida vale" not in title.lower():
+            tracks.append({"artist": artist, "title": title})
 
-                    # If we have structured data, parse it
-                    if artist:
-                        # Find siblings or other elements that might contain track info
-                        for sibling in artist_element.next_siblings:
-                            if hasattr(sibling, "get_text"):
-                                track_candidate = sibling.get_text(strip=True)
-                                if track_candidate and track_candidate != artist:
-                                    tracks.append(
-                                        {"artist": artist, "title": track_candidate}
-                                    )
-                                    break
-                    else:
-                        # Fallback: try to parse from text content
-                        lines = [
-                            line.strip()
-                            for line in text_content.split("\n")
-                            if line.strip()
-                        ]
-                        if len(lines) >= 2:
-                            # Assume first line is artist, second is track
-                            tracks.append({"artist": lines[0], "title": lines[1]})
-                        elif len(lines) == 1 and " - " in lines[0]:
-                            # Try to split on " - "
-                            parts = lines[0].split(" - ", 1)
-                            if len(parts) == 2:
-                                tracks.append({"artist": parts[0], "title": parts[1]})
-
-    # If we didn't find structured tracks, try a different approach within segments-list
     if not tracks:
-        segments_list = soup.find("div", class_="segments-list")
-        if segments_list and isinstance(segments_list, Tag):
-            # Look for any list items that might contain track info
-            list_items = segments_list.find_all("li")
-            for item in list_items:
-                text = item.get_text(separator=" ", strip=True)
-                # Simple heuristic: look for patterns like "Artist Track" or "Artist - Track"
-                if re.search(r"\w+\s+\w+", text) and len(text) > 5:
-                    # Try to split on common separators
-                    if " - " in text:
-                        parts = text.split(" - ", 1)
-                        tracks.append(
-                            {"artist": parts[0].strip(), "title": parts[1].strip()}
-                        )
-                    elif " feat " in text.lower():
-                        parts = text.split(" feat ", 1)
-                        tracks.append(
-                            {"artist": parts[0].strip(), "title": parts[1].strip()}
-                        )
-                    else:
-                        # Just use the whole text as title, no artist
-                        tracks.append({"artist": "", "title": text})
+        raise ValueError("No music tracks found")
 
-    return playlist_title, tracks
+    return playlist_title, tracks, broadcast_date, description
 
-def create_youtube_playlist(title: str, tracks: List[Dict[str, str]], prefix: str = "") -> List[Dict[str, str]]:
+def create_youtube_playlist(title: str, tracks: List[Dict[str, str]], prefix: str = "", broadcast_date: str = "", description: str = "") -> List[Dict[str, str]]:
     """Create a YouTube playlist from BBC tracks"""
-    # Add prefix to title if specified
+    # Add prefix and date to title if specified
     if prefix:
-        title = f"{prefix}: {title}"
+        if broadcast_date:
+            title = f"{prefix}-{broadcast_date}: {title}"
+        else:
+            title = f"{prefix}: {title}"
     
-    # Get YouTube credentials and service
-    creds = get_credentials()
-    youtube_service: Resource = build('youtube', 'v3', credentials=creds)
+    # Get YTMusic instance
+    ytmusic = get_ytmusic()
     
     # Create or find playlist
-    playlist_id, was_created = create_or_find_playlist(youtube_service, title)
+    playlist_id, was_created = create_or_find_playlist(ytmusic, title, description)
     if was_created:
         print(f"Created playlist: {title} (ID: {playlist_id})", file=sys.stderr)
     else:
@@ -183,40 +156,48 @@ def create_youtube_playlist(title: str, tracks: List[Dict[str, str]], prefix: st
         search_query = f"{track['artist']} {track['title']}".strip()
         print(f"Searching for track {i}/{len(tracks)}: {search_query}", file=sys.stderr)
         
-        video_id = search_track_with_cache(youtube_service, search_query)
-        if video_id:
-            # Get video details to verify match
-            video_details = get_video_details(youtube_service, video_id)
-            if video_details:
-                # Check if the returned video matches our search criteria
-                yt_title = video_details.get('title', '').lower()
-                yt_channel = video_details.get('channelTitle', '').lower()
-                
-                expected_artist = track['artist'].lower()
-                expected_title = track['title'].lower()
-                
-                # Check if both artist and title are in the YouTube video details
-                artist_match = expected_artist in yt_title or expected_artist in yt_channel
-                title_match = expected_title in yt_title
-                
-                if artist_match and title_match:
-                    track_search_results.append({
-                        'track_info': track,
-                        'video_id': video_id,
-                        'search_query': search_query
-                    })
-                    print(f"  Found: {video_id} - {video_details.get('title')}", file=sys.stderr)
-                else:
-                    print(f"  Mismatch: Expected '{track['artist']} - {track['title']}' but found '{video_details.get('title')}' by '{video_details.get('channelTitle')}'", file=sys.stderr)
-                    mismatched.append({
-                        'track_info': track,
-                        'video_id': video_id,
-                        'youtube_title': video_details.get('title', ''),
-                        'youtube_channel': video_details.get('channelTitle', '')
-                    })
-                    not_found.append(track)
+        result = search_track_with_cache(ytmusic, search_query, track['artist'], track['title'])
+        if result:
+            video_id = result.get('videoId')
+            yt_title = result.get('title', '')
+            yt_artist = get_artist_names(result)
+            
+            expected_artist_norm = normalize_text(track['artist'])
+            expected_title_norm = normalize_text(track['title'])
+            
+            # Check if the returned video matches our search criteria
+            yt_artist_norm = normalize_text(yt_artist)
+            yt_title_norm = normalize_text(yt_title)
+            
+            artist_match = (
+                expected_artist_norm == yt_artist_norm or
+                expected_artist_norm in yt_artist_norm or
+                any(
+                    expected_artist_norm == normalize_text(artist.get('name', '')) or
+                    expected_artist_norm in normalize_text(artist.get('name', ''))
+                    for artist in result.get('artists', [])
+                )
+            )
+            title_match = (
+                expected_title_norm == yt_title_norm or
+                expected_title_norm in yt_title_norm
+            )
+            
+            if artist_match and title_match:
+                track_search_results.append({
+                    'track_info': track,
+                    'video_id': video_id,
+                    'search_query': search_query
+                })
+                print(f"  Found: {video_id} - {yt_title} by {yt_artist}", file=sys.stderr)
             else:
-                print(f"  Found video ID but couldn't get details: {video_id}", file=sys.stderr)
+                print(f"  Mismatch: Expected '{track['artist']} - {track['title']}' but found '{yt_title}' by '{yt_artist}'", file=sys.stderr)
+                mismatched.append({
+                    'track_info': track,
+                    'video_id': video_id,
+                    'youtube_title': yt_title,
+                    'youtube_channel': yt_artist
+                })
                 not_found.append(track)
         else:
             print(f"  Not found: {track['artist']} - {track['title']}", file=sys.stderr)
@@ -231,7 +212,7 @@ def create_youtube_playlist(title: str, tracks: List[Dict[str, str]], prefix: st
         print(f"Adding {len(video_ids)} tracks to playlist...", file=sys.stderr)
         
         try:
-            responses, errors = add_tracks_to_playlist(youtube_service, playlist_id, video_ids)
+            responses, errors = add_tracks_to_playlist(ytmusic, playlist_id, video_ids)
             
             # Handle any errors during adding
             if errors:
@@ -253,7 +234,7 @@ def create_youtube_playlist(title: str, tracks: List[Dict[str, str]], prefix: st
             print("Falling back to individual track adding...", file=sys.stderr)
             for result in track_search_results:
                 try:
-                    add_tracks_to_playlist(youtube_service, playlist_id, [result['video_id']])
+                    add_tracks_to_playlist(ytmusic, playlist_id, [result['video_id']])
                     print(f"  Added: {result['video_id']}", file=sys.stderr)
                 except Exception as e:
                     print(f"  Failed to add {result['video_id']}: {e}", file=sys.stderr)
@@ -271,18 +252,20 @@ def create_youtube_playlist(title: str, tracks: List[Dict[str, str]], prefix: st
     
     return not_found
 
-def create_youtube_playlist_from_draft(title: str, draft_tracks: List[Dict[str, Any]], prefix: str = "") -> List[Dict[str, Any]]:
+def create_youtube_playlist_from_draft(title: str, draft_tracks: List[Dict[str, Any]], prefix: str = "", broadcast_date: str = "", description: str = "") -> List[Dict[str, Any]]:
     """Create a YouTube playlist from draft tracks"""
-    # Add prefix to title if specified
+    # Add prefix and date to title if specified
     if prefix:
-        title = f"{prefix}: {title}"
+        if broadcast_date:
+            title = f"{prefix}-{broadcast_date}: {title}"
+        else:
+            title = f"{prefix}: {title}"
     
-    # Get YouTube credentials and service
-    creds = get_credentials()
-    youtube_service: Resource = build('youtube', 'v3', credentials=creds)
+    # Get YTMusic instance
+    ytmusic = get_ytmusic()
     
     # Create or find playlist
-    playlist_id, was_created = create_or_find_playlist(youtube_service, title)
+    playlist_id, was_created = create_or_find_playlist(ytmusic, title, description)
     if was_created:
         print(f"Created playlist: {title} (ID: {playlist_id})", file=sys.stderr)
     else:
@@ -300,7 +283,7 @@ def create_youtube_playlist_from_draft(title: str, draft_tracks: List[Dict[str, 
     print(f"Adding {len(video_ids)} tracks to playlist...", file=sys.stderr)
     
     try:
-        responses, errors = add_tracks_to_playlist(youtube_service, playlist_id, video_ids)
+        responses, errors = add_tracks_to_playlist(ytmusic, playlist_id, video_ids)
         
         if errors:
             print(f"Encountered {len(errors)} errors while adding tracks:", file=sys.stderr)
@@ -322,68 +305,67 @@ def create_youtube_playlist_from_draft(title: str, draft_tracks: List[Dict[str, 
         print(f"Error adding tracks to playlist: {e}", file=sys.stderr)
         return draft_tracks
 
-def save_draft(title: str, tracks: List[Dict[str, str]], program_id: str, filename: str) -> None:
+def save_draft(title: str, tracks: List[Dict[str, str]], program_id: str, filename: str, broadcast_date: str = "", description: str = "") -> None:
     """Save playlist draft with search results to JSON file"""
-    # Get YouTube credentials and service for searching
-    creds = get_credentials()
-    youtube_service: Resource = build('youtube', 'v3', credentials=creds)
+    # Get YTMusic instance for searching
+    ytmusic = get_ytmusic()
     
     draft_tracks = []
     
     for i, track in enumerate(tracks, 1):
         search_query = f"{track['artist']} {track['title']}".strip()
         print(f"Searching for track {i}/{len(tracks)}: {search_query}", file=sys.stderr)
+        result = search_track_with_cache(ytmusic, search_query, track['artist'], track['title'])
         
-        video_id = search_track_with_cache(youtube_service, search_query)
-        
-        if video_id:
-            # Get video details to assess match quality
-            video_details = get_video_details(youtube_service, video_id)
-            if video_details:
-                yt_title = video_details.get('title', '')
-                yt_channel = video_details.get('channelTitle', '')
-                
-                # Assess match quality
-                expected_artist = track['artist'].lower()
-                expected_title = track['title'].lower()
-                
-                artist_match = expected_artist in yt_title.lower() or expected_artist in yt_channel.lower()
-                title_match = expected_title in yt_title.lower()
-                
-                if artist_match and title_match:
-                    status = "exact_match"
-                    include = True
-                    notes = ""
-                elif artist_match or title_match:
-                    status = "suspect_match"
-                    include = False
-                    notes = "Partial match - please verify"
-                else:
-                    status = "suspect_match"
-                    include = False
-                    notes = "Poor match - please verify"
-                
-                draft_tracks.append({
-                    "bbc_artist": track['artist'],
-                    "bbc_title": track['title'],
-                    "status": status,
-                    "video_id": video_id,
-                    "youtube_title": yt_title,
-                    "youtube_channel": yt_channel,
-                    "include": include,
-                    "notes": notes
-                })
+        if result:
+            video_id = result.get('videoId')
+            yt_title = result.get('title', '')
+            yt_artist = get_artist_names(result)
+            
+            # Assess match quality
+            expected_artist_norm = normalize_text(track['artist'])
+            expected_title_norm = normalize_text(track['title'])
+            
+            yt_artist_norm = normalize_text(yt_artist)
+            yt_title_norm = normalize_text(yt_title)
+            
+            artist_match = (
+                expected_artist_norm == yt_artist_norm or
+                expected_artist_norm in yt_artist_norm or
+                any(
+                    expected_artist_norm == normalize_text(artist.get('name', '')) or
+                    expected_artist_norm in normalize_text(artist.get('name', ''))
+                    for artist in result.get('artists', [])
+                )
+            )
+            title_match = (
+                expected_title_norm == yt_title_norm or
+                expected_title_norm in yt_title_norm
+            )
+            
+            if artist_match and title_match:
+                status = "exact_match"
+                include = True
+                notes = ""
+            elif artist_match or title_match:
+                status = "suspect_match"
+                include = False
+                notes = "Partial match - please verify"
             else:
-                draft_tracks.append({
-                    "bbc_artist": track['artist'],
-                    "bbc_title": track['title'],
-                    "status": "not_found",
-                    "video_id": None,
-                    "youtube_title": None,
-                    "youtube_channel": None,
-                    "include": False,
-                    "notes": "Could not get video details"
-                })
+                status = "suspect_match"
+                include = False
+                notes = "Poor match - please verify"
+            
+            draft_tracks.append({
+                "bbc_artist": track['artist'],
+                "bbc_title": track['title'],
+                "status": status,
+                "video_id": video_id,
+                "youtube_title": yt_title,
+                "youtube_channel": yt_artist,
+                "include": include,
+                "notes": notes
+            })
         else:
             draft_tracks.append({
                 "bbc_artist": track['artist'],
@@ -401,6 +383,8 @@ def save_draft(title: str, tracks: List[Dict[str, str]], program_id: str, filena
     draft_data = {
         "playlist_title": title,
         "program_id": program_id,
+        "broadcast_date": broadcast_date,
+        "description": description,
         "tracks": draft_tracks,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S")
     }
@@ -410,35 +394,20 @@ def save_draft(title: str, tracks: List[Dict[str, str]], program_id: str, filena
     
     print(f"Draft saved to: {filename}", file=sys.stderr)
 
-def load_draft(filename: str) -> Tuple[str, List[Dict[str, Any]]]:
+def load_draft(filename: str) -> Tuple[str, List[Dict[str, Any]], str, str]:
     """Load playlist draft from JSON file"""
     try:
         with open(filename, 'r', encoding='utf-8') as f:
             draft_data = json.load(f)
         
-        # Handle both old and new draft formats
-        if "playlist_title" in draft_data:
-            # New format
-            title = draft_data.get("playlist_title", "")
-            tracks = draft_data.get("tracks", [])
-        else:
-            # Old format - convert to new format
-            title = draft_data.get("title", "")
-            old_tracks = draft_data.get("tracks", [])
-            tracks = []
-            for track in old_tracks:
-                tracks.append({
-                    "bbc_artist": track.get("artist", ""),
-                    "bbc_title": track.get("title", ""),
-                    "status": "unknown",
-                    "video_id": None,
-                    "youtube_title": None,
-                    "youtube_channel": None,
-                    "include": False,
-                    "notes": "Old format - needs search"
-                })
+        title = draft_data.get("playlist_title", "")
+        tracks = draft_data.get("tracks", [
+
+])
+        broadcast_date = draft_data.get("broadcast_date", "")
+        description = draft_data.get("description", "")
         
-        return title, tracks
+        return title, tracks, broadcast_date, description
     except Exception as e:
         print(f"Error loading draft file: {e}", file=sys.stderr)
         sys.exit(1)
@@ -470,19 +439,13 @@ def main() -> None:
     
     # Default to 'create' command if none specified (for backward compatibility)
     if not args.command:
-        # Handle old-style usage: program_id as positional argument
-        if len(sys.argv) > 1:
-            args.command = 'create'
-            args.program_id = sys.argv[1]
-            args.prefix = None
-        else:
-            parser.print_help()
-            sys.exit(1)
+        parser.print_help()
+        sys.exit(1)
 
     if args.command == 'draft':
         # Parse BBC playlist and save as draft
         print("Fetching BBC playlist...", file=sys.stderr)
-        title, tracks = parse_bbc_playlist(args.program_id)
+        title, tracks, broadcast_date, description = parse_bbc_playlist(args.program_id)
 
         if not title or not tracks:
             print("Failed to parse BBC playlist", file=sys.stderr)
@@ -490,10 +453,14 @@ def main() -> None:
 
         print(f"Found playlist: {title}", file=sys.stderr)
         print(f"Found {len(tracks)} tracks", file=sys.stderr)
+        if broadcast_date:
+            print(f"Broadcast date: {broadcast_date}", file=sys.stderr)
+        if description:
+            print(f"Description: {description[:100]}{'...' if len(description) > 100 else ''}", file=sys.stderr)
 
         # Determine output filename
         output_file = args.output if args.output else f"{args.program_id}.json"
-        save_draft(title, tracks, args.program_id, output_file)
+        save_draft(title, tracks, args.program_id, output_file, broadcast_date, description)
         
         print(f"\nYou can now edit the draft file '{output_file}' to modify tracks before creating the playlist.", file=sys.stderr)
         print(f"To create the playlist, run: gp2ytm bbc create --draft {output_file}", file=sys.stderr)
@@ -502,7 +469,7 @@ def main() -> None:
         # Load playlist data from either BBC or draft file
         if hasattr(args, 'program_id') and args.program_id:
             print("Fetching BBC playlist...", file=sys.stderr)
-            title, tracks = parse_bbc_playlist(args.program_id)
+            title, tracks, broadcast_date, description = parse_bbc_playlist(args.program_id)
             
             if not title or not tracks:
                 print("Failed to parse BBC playlist", file=sys.stderr)
@@ -510,6 +477,10 @@ def main() -> None:
 
             print(f"Playlist: {title}", file=sys.stderr)
             print(f"Found {len(tracks)} tracks", file=sys.stderr)
+            if broadcast_date:
+                print(f"Broadcast date: {broadcast_date}", file=sys.stderr)
+            if description:
+                print(f"Description: {description[:100]}{'...' if len(description) > 100 else ''}", file=sys.stderr)
 
             if args.command == 'print':
                 # Just print the tracks without creating a YouTube playlist
@@ -519,7 +490,7 @@ def main() -> None:
             else:
                 # Create YouTube playlist and add tracks (old workflow)
                 print("Creating YouTube playlist...", file=sys.stderr)
-                not_found = create_youtube_playlist(title, tracks, args.prefix if hasattr(args, 'prefix') else "")
+                not_found = create_youtube_playlist(title, tracks, args.prefix if hasattr(args, 'prefix') else "", broadcast_date, description)
 
                 # Output unfound tracks to stdout
                 if not_found:
@@ -534,7 +505,7 @@ def main() -> None:
                     
         elif hasattr(args, 'draft') and args.draft:
             print(f"Loading draft from {args.draft}...", file=sys.stderr)
-            title, draft_tracks = load_draft(args.draft)
+            title, draft_tracks, broadcast_date, description = load_draft(args.draft)
             
             if not title or not draft_tracks:
                 print("Failed to load draft data", file=sys.stderr)
@@ -542,6 +513,10 @@ def main() -> None:
 
             print(f"Playlist: {title}", file=sys.stderr)
             print(f"Found {len(draft_tracks)} tracks", file=sys.stderr)
+            if broadcast_date:
+                print(f"Broadcast date: {broadcast_date}", file=sys.stderr)
+            if description:
+                print(f"Description: {description[:100]}{'...' if len(description) > 100 else ''}", file=sys.stderr)
 
             if args.command == 'print':
                 # Just print the tracks without creating a YouTube playlist
@@ -562,7 +537,7 @@ def main() -> None:
             else:
                 # Create YouTube playlist from draft (new workflow)
                 print("Creating YouTube playlist from draft...", file=sys.stderr)
-                not_included = create_youtube_playlist_from_draft(title, draft_tracks, args.prefix if hasattr(args, 'prefix') else "")
+                not_included = create_youtube_playlist_from_draft(title, draft_tracks, args.prefix if hasattr(args, 'prefix') else "", broadcast_date, description)
 
                 # Output tracks that were not included
                 if not_included:

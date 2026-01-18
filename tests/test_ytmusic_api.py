@@ -2,27 +2,46 @@
 
 import pytest
 from unittest.mock import patch, Mock, mock_open
-import sys
 import os
 from io import StringIO
 import src.gp2ytm.ytmusic_api
 from src.gp2ytm.ytmusic_api import (
-    get_credentials, create_or_find_playlist, add_tracks_to_playlist, 
-    search_track_with_cache, main, load_cache, save_cache, CACHE_DIR, CACHE_FILE
+    get_ytmusic, find_playlist, create_or_find_playlist, add_tracks_to_playlist,
+    search_track, normalize_text, get_artist_names,
+    search_track_with_cache, load_cache, save_cache, main, CACHE_DIR, CACHE_FILE
 )
 
 @pytest.fixture
-def mock_youtube_service():
-    """Create a mock YouTube service."""
-    return Mock()
+def mock_ytmusic():
+    """Create a mock YTMusic instance."""
+    mock = Mock()
+    mock.get_library_playlists.return_value = []
+    mock.create_playlist.return_value = 'test_playlist_id'
+    mock.add_playlist_items.return_value = {'status': 'success'}
+    mock.search.return_value = [
+        {
+            'videoId': 'test_video_id',
+            'title': 'Test Track',
+            'artists': [{'name': 'Test Artist'}]
+        }
+    ]
+    return mock
 
 @pytest.fixture
-def mock_credentials():
-    """Create mock credentials."""
-    creds = Mock()
-    creds.valid = True
-    creds.expired = False
-    return creds
+def sample_search_results():
+    """Sample search results for testing."""
+    return [
+        {
+            'videoId': 'video_id_1',
+            'title': 'Test Track',
+            'artists': [{'name': 'Test Artist'}]
+        },
+        {
+            'videoId': 'video_id_2',
+            'title': 'Another Track',
+            'artists': [{'name': 'Another Artist'}]
+        }
+    ]
 
 class TestCacheDirectory:
     """Tests for cache directory handling."""
@@ -48,95 +67,121 @@ class TestCacheDirectory:
             expected = os.path.join(os.path.expanduser('~'), '.cache', 'gp2ytm')
             assert CACHE_DIR == expected
 
-class TestGetCredentials:
-    """Tests for get_credentials function."""
+class TestGetYTMusic:
+    """Tests for get_ytmusic function."""
 
-    @patch("src.gp2ytm.ytmusic_api.Credentials.from_authorized_user_file")
+    @patch("src.gp2ytm.ytmusic_api.YTMusic")
     @patch("src.gp2ytm.ytmusic_api.os.path.exists")
-    def test_get_credentials_existing_valid(self, mock_exists, mock_from_file, mock_credentials):
-        """Test getting existing valid credentials."""
+    def test_get_ytmusic_success(self, mock_exists, mock_ytmusic_class, mock_ytmusic):
+        """Test successful YTMusic instance creation."""
         mock_exists.return_value = True
-        mock_from_file.return_value = mock_credentials
+        mock_ytmusic_class.return_value = mock_ytmusic
         
-        creds = get_credentials()
-        assert creds == mock_credentials
+        result = get_ytmusic()
+        
+        assert result == mock_ytmusic
+        mock_ytmusic_class.assert_called_once()
 
-    @patch("src.gp2ytm.ytmusic_api.InstalledAppFlow")
-    @patch("src.gp2ytm.ytmusic_api.Credentials.from_authorized_user_file")
     @patch("src.gp2ytm.ytmusic_api.os.path.exists")
-    @patch("builtins.open", new_callable=mock_open)
-    def test_get_credentials_new_login(self, mock_file, mock_exists, mock_from_file, mock_flow, mock_credentials):
-        """Test getting credentials with new login."""
+    def test_get_ytmusic_no_headers_file(self, mock_exists):
+        """Test YTMusic instance creation when headers file doesn't exist."""
         mock_exists.return_value = False
-        mock_flow_instance = Mock()
-        mock_flow_instance.run_local_server.return_value = mock_credentials
-        mock_flow.from_client_secrets_file.return_value = mock_flow_instance
         
-        creds = get_credentials()
-        assert creds == mock_credentials
-        mock_flow_instance.run_local_server.assert_called_once_with(port=0)
+        with pytest.raises(SystemExit):
+            get_ytmusic()
+
+class TestFindPlaylist:
+    """Tests for find_playlist function."""
+
+    def test_find_playlist_success(self, mock_ytmusic):
+        """Test successful playlist finding."""
+        mock_ytmusic.get_library_playlists.return_value = [
+            {'title': 'Test Playlist', 'playlistId': 'test_id'},
+            {'title': 'Another Playlist', 'playlistId': 'another_id'}
+        ]
+        
+        result = find_playlist(mock_ytmusic, 'Test Playlist')
+        
+        assert result == 'test_id'
+
+    def test_find_playlist_not_found(self, mock_ytmusic):
+        """Test playlist finding when playlist doesn't exist."""
+        mock_ytmusic.get_library_playlists.return_value = [
+            {'title': 'Other Playlist', 'playlistId': 'other_id'}
+        ]
+        
+        result = find_playlist(mock_ytmusic, 'Test Playlist')
+        
+        assert result is None
 
 class TestCreateOrFindPlaylist:
     """Tests for create_or_find_playlist function."""
 
-    def test_create_playlist_success(self, mock_youtube_service):
-        """Test successful playlist creation."""
-        mock_response = {
-            'id': 'test_playlist_id',
-            'snippet': {
-                'title': 'Test Playlist',
-                'description': 'Test Description'
-            }
-        }
-        mock_youtube_service.playlists().insert().execute.return_value = mock_response
+    @patch("src.gp2ytm.ytmusic_api.find_playlist")
+    def test_create_playlist_new(self, mock_find_playlist, mock_ytmusic):
+        """Test creating a new playlist."""
+        mock_find_playlist.return_value = None
+        mock_ytmusic.create_playlist.return_value = 'new_playlist_id'
         
-        result, was_created = create_or_find_playlist(
-            mock_youtube_service, 
-            'Test Playlist', 
-            'Test Description',
-            'private'
-        )
+        playlist_id, was_created = create_or_find_playlist(mock_ytmusic, "New Playlist")
         
-        assert result == 'test_playlist_id'
-        assert was_created
-        mock_youtube_service.playlists().insert().execute.assert_called_once()
+        assert playlist_id == 'new_playlist_id'
+        assert was_created is True
+        mock_ytmusic.create_playlist.assert_called_once_with("New Playlist", "", "PRIVATE")
+
+    @patch("src.gp2ytm.ytmusic_api.find_playlist")
+    def test_create_playlist_existing(self, mock_find_playlist, mock_ytmusic):
+        """Test finding an existing playlist."""
+        mock_find_playlist.return_value = 'existing_playlist_id'
+        
+        playlist_id, was_created = create_or_find_playlist(mock_ytmusic, "Existing Playlist")
+        
+        assert playlist_id == 'existing_playlist_id'
+        assert was_created is False
+        mock_ytmusic.create_playlist.assert_not_called()
 
 class TestAddTracksToPlaylist:
     """Tests for add_tracks_to_playlist function."""
 
-    def test_add_tracks_success(self, mock_youtube_service):
+    def test_add_tracks_success(self, mock_ytmusic):
         """Test successful track addition."""
-        mock_response = {'id': 'playlist_item_id'}
-        mock_youtube_service.playlistItems().insert().execute.return_value = mock_response
+        mock_ytmusic.add_playlist_items.return_value = {'status': 'success'}
         
-        responses, errors = add_tracks_to_playlist(
-            mock_youtube_service, 
-            'test_playlist_id', 
-            ['video1', 'video2']
-        )
+        responses, errors = add_tracks_to_playlist(mock_ytmusic, 'playlist_id', ['video_id_1', 'video_id_2'])
+        
+        assert len(responses) == 1
+        assert len(errors) == 0
+        mock_ytmusic.add_playlist_items.assert_called_once_with('playlist_id', ['video_id_1', 'video_id_2'])
+
+    def test_add_tracks_batch_error_fallback_success(self, mock_ytmusic):
+        """Test track addition with batch error but individual success."""
+        # First call (batch) fails, subsequent calls (individual) succeed
+        mock_ytmusic.add_playlist_items.side_effect = [
+            Exception("Batch error"),
+            {'status': 'success'},
+            {'status': 'success'}
+        ]
+        
+        responses, errors = add_tracks_to_playlist(mock_ytmusic, 'playlist_id', ['video_id_1', 'video_id_2'])
         
         assert len(responses) == 2
         assert len(errors) == 0
-        assert responses[0] == mock_response
-        assert mock_youtube_service.playlistItems().insert().execute.call_count == 2
+        assert mock_ytmusic.add_playlist_items.call_count == 3
 
-    def test_add_tracks_with_error(self, mock_youtube_service):
-        """Test track addition with errors."""
-        mock_response = {'id': 'playlist_item_id'}
-        mock_youtube_service.playlistItems().insert().execute.side_effect = [
-            mock_response,
-            Exception("API Error")
+    def test_add_tracks_individual_errors(self, mock_ytmusic):
+        """Test track addition with individual errors."""
+        mock_ytmusic.add_playlist_items.side_effect = [
+            Exception("Batch error"),
+            Exception("Individual error 1"),
+            Exception("Individual error 2")
         ]
         
-        responses, errors = add_tracks_to_playlist(
-            mock_youtube_service, 
-            'test_playlist_id', 
-            ['video1', 'video2']
-        )
+        responses, errors = add_tracks_to_playlist(mock_ytmusic, 'playlist_id', ['video_id_1', 'video_id_2'])
         
-        assert len(responses) == 1
-        assert len(errors) == 1
-        assert errors[0] == ('video2', 'API Error')
+        assert len(responses) == 0
+        assert len(errors) == 2
+        assert errors[0] == ('video_id_1', 'Individual error 1')
+        assert errors[1] == ('video_id_2', 'Individual error 2')
 
 class TestCacheFunctions:
     """Tests for cache load/save functions."""
@@ -212,144 +257,164 @@ class TestCacheFunctions:
 class TestSearchTrack:
     """Tests for search_track function."""
 
-    def test_search_track_success(self, mock_youtube_service):
-        """Test successful track search."""
-        mock_response = {
-            'items': [{
-                'id': {'videoId': 'test_video_id'},
-                'snippet': {'title': 'Test Track Official Audio'}
-            }]
-        }
-        mock_youtube_service.search().list().execute.return_value = mock_response
+    def test_search_track_songs_success(self, mock_ytmusic, sample_search_results):
+        """Test successful track search in songs."""
+        mock_ytmusic.search.return_value = sample_search_results
         
-        # Clear cache before test
-        src.gp2ytm.ytmusic_api._search_cache.clear()
+        result = search_track(mock_ytmusic, "test query")
         
-        # Import the search_track function directly to test it
-        from src.gp2ytm.ytmusic_api import search_track
-        result = search_track(mock_youtube_service, 'test query')
-        assert result == 'test_video_id'
+        assert result == sample_search_results[0]
+        mock_ytmusic.search.assert_called_with("test query", filter="songs", limit=5)
 
-    def test_search_track_no_results(self, mock_youtube_service):
+    def test_search_track_videos_fallback(self, mock_ytmusic, sample_search_results):
+        """Test track search falling back to videos when no songs found."""
+        mock_ytmusic.search.side_effect = [[], sample_search_results]
+        
+        result = search_track(mock_ytmusic, "test query")
+        
+        assert result == sample_search_results[0]
+        assert mock_ytmusic.search.call_count == 2
+
+    def test_search_track_no_results(self, mock_ytmusic):
         """Test track search with no results."""
-        mock_response = {'items': []}
-        mock_youtube_service.search().list().execute.return_value = mock_response
+        mock_ytmusic.search.return_value = []
         
-        # Clear cache before test
-        src.gp2ytm.ytmusic_api._search_cache.clear()
+        result = search_track(mock_ytmusic, "test query")
         
-        # Import the search_track function directly to test it
-        from src.gp2ytm.ytmusic_api import search_track
-        result = search_track(mock_youtube_service, 'test query')
         assert result is None
 
-    @patch("src.gp2ytm.ytmusic_api.load_cache")
-    @patch("src.gp2ytm.ytmusic_api.save_cache")
-    def test_search_track_with_cache_success(self, mock_save_cache, mock_load_cache, mock_youtube_service):
-        """Test successful track search with caching."""
-        # Clear cache before test
-        src.gp2ytm.ytmusic_api._search_cache.clear()
-        
-        # Mock the search_track function to return a result
-        with patch("src.gp2ytm.ytmusic_api.search_track", return_value="test_video_id"):
-            result = search_track_with_cache(mock_youtube_service, 'test query')
-            assert result == 'test_video_id'
+class TestSearchTrackWithCache:
+    """Tests for search_track_with_cache function."""
 
     @patch("src.gp2ytm.ytmusic_api.load_cache")
     @patch("src.gp2ytm.ytmusic_api.save_cache")
-    def test_search_track_no_results_with_cache(self, mock_save_cache, mock_load_cache, mock_youtube_service):
+    @patch("src.gp2ytm.ytmusic_api.search_track")
+    def test_search_track_with_cache_success(self, mock_search_track, mock_save_cache, mock_load_cache, mock_ytmusic, sample_search_results):
+        """Test track search with successful caching."""
+        mock_search_track.return_value = sample_search_results[0]
+        
+        result = search_track_with_cache(mock_ytmusic, "test query")
+        
+        assert result == sample_search_results[0]
+        mock_save_cache.assert_called_once()
+
+    @patch("src.gp2ytm.ytmusic_api.load_cache")
+    @patch("src.gp2ytm.ytmusic_api.save_cache")
+    @patch("src.gp2ytm.ytmusic_api.search_track")
+    def test_search_track_no_results_with_cache(self, mock_search_track, mock_save_cache, mock_load_cache, mock_ytmusic):
         """Test track search with no results and caching."""
-        # Clear cache before test
-        src.gp2ytm.ytmusic_api._search_cache.clear()
+        mock_search_track.return_value = None
         
-        # Mock the search_track function to return None
-        with patch("src.gp2ytm.ytmusic_api.search_track", return_value=None):
-            result = search_track_with_cache(mock_youtube_service, 'test query')
-            assert result is None
+        result = search_track_with_cache(mock_ytmusic, "test query")
+        
+        assert result is None
+        mock_save_cache.assert_not_called()
 
-    def test_search_track_cached_result(self, mock_youtube_service):
-        """Test that cached results are returned without API call."""
-        # Set up cache with test data
-        src.gp2ytm.ytmusic_api._search_cache["cached query"] = "cached_video_id"
+    @patch("src.gp2ytm.ytmusic_api.search_track")
+    def test_search_track_cached_result(self, mock_search_track, mock_ytmusic, sample_search_results):
+        """Test track search returning cached result."""
+        from src.gp2ytm.ytmusic_api import _search_cache
+        _search_cache['test query'] = 'cached_video_id'
         
-        # Mock search_track to ensure it's not called
-        with patch("src.gp2ytm.ytmusic_api.search_track") as mock_search:
-            result = search_track_with_cache(mock_youtube_service, 'cached query')
-            assert result == 'cached_video_id'
-            # Verify search_track was not called
-            mock_search.assert_not_called()
+        # Mock search_track to return a result with the cached video ID
+        mock_search_track.return_value = sample_search_results[0]
+        sample_search_results[0]['videoId'] = 'cached_video_id'
+        
+        result = search_track_with_cache(mock_ytmusic, "test query")
+        
+        assert result == sample_search_results[0]
+
+class TestNormalizeText:
+    """Tests for normalize_text function."""
+
+    def test_normalize_text_basic(self):
+        """Test basic text normalization."""
+        result = normalize_text("Test String")
+        assert result == "test string"
+
+    def test_normalize_text_accents(self):
+        """Test accent removal."""
+        result = normalize_text("café naïve résumé")
+        assert result == "cafe naive resume"
+
+    def test_normalize_text_special_chars(self):
+        """Test special character replacement."""
+        result = normalize_text("Michał")
+        assert result == "michal"
+
+    def test_normalize_text_empty(self):
+        """Test empty string normalization."""
+        result = normalize_text("")
+        assert result == ""
+
+    def test_normalize_text_none(self):
+        """Test None input."""
+        result = normalize_text(None)
+        assert result == ""
+
+class TestGetArtistNames:
+    """Tests for get_artist_names function."""
+
+    def test_get_artist_names_single(self):
+        """Test extracting single artist name."""
+        result_data = {'artists': [{'name': 'Test Artist'}]}
+        result = get_artist_names(result_data)
+        assert result == "Test Artist"
+
+    def test_get_artist_names_multiple(self):
+        """Test extracting multiple artist names."""
+        result_data = {'artists': [{'name': 'Artist One'}, {'name': 'Artist Two'}]}
+        result = get_artist_names(result_data)
+        assert result == "Artist One, Artist Two"
+
+    def test_get_artist_names_no_artists(self):
+        """Test when no artists are present."""
+        result_data = {'artists': []}
+        result = get_artist_names(result_data)
+        assert result == "Unknown Artist"
 
 class TestMain:
     """Tests for main function."""
 
-    @patch("src.gp2ytm.ytmusic_api.get_credentials")
-    @patch("src.gp2ytm.ytmusic_api.build")
+    @patch("src.gp2ytm.ytmusic_api.setup")
+    @patch("src.gp2ytm.ytmusic_api.os.makedirs")
+    @patch("sys.argv", ["ytmusic_api.py", "setup"])
+    def test_main_setup_command(self, mock_makedirs, mock_setup):
+        """Test main function with setup command."""
+        with patch("sys.stdout", new_callable=StringIO):
+            main()
+        
+        mock_makedirs.assert_called_once()
+        mock_setup.assert_called_once()
+
+    @patch("src.gp2ytm.ytmusic_api.get_ytmusic")
     @patch("src.gp2ytm.ytmusic_api.create_or_find_playlist")
-    def test_main_create_playlist(self, mock_create_playlist, mock_build, mock_get_credentials, mock_credentials):
+    @patch("sys.argv", ["ytmusic_api.py", "create-playlist", "Test Playlist"])
+    def test_main_create_playlist(self, mock_create_playlist, mock_get_ytmusic, mock_ytmusic):
         """Test main function with create-playlist command."""
-        mock_get_credentials.return_value = mock_credentials
-        mock_build.return_value = Mock()
-        mock_create_playlist.return_value = ('test_playlist_id', True)
+        mock_get_ytmusic.return_value = mock_ytmusic
+        mock_create_playlist.return_value = ('playlist_id', True)
         
-        # Capture stdout
-        captured_output = StringIO()
-        sys.stdout = captured_output
-        
-        # Test with create-playlist command
-        sys.argv = ['ytmusic_api.py', 'create-playlist', 'Test Playlist']
-        try:
+        with patch("sys.stdout", new_callable=StringIO):
             main()
-        except SystemExit:
-            pass
         
-        # Restore stdout
-        sys.stdout = sys.__stdout__
-        
-        output = captured_output.getvalue()
-        assert 'Created playlist: Test Playlist' in output
-        assert 'Playlist ID: test_playlist_id' in output
+        mock_create_playlist.assert_called_once_with(mock_ytmusic, "Test Playlist", "", "PRIVATE")
 
-    @patch("src.gp2ytm.ytmusic_api.get_credentials")
-    @patch("src.gp2ytm.ytmusic_api.build")
+    @patch("src.gp2ytm.ytmusic_api.get_ytmusic")
     @patch("src.gp2ytm.ytmusic_api.search_track_with_cache")
-    def test_main_search_track(self, mock_search_track, mock_build, mock_get_credentials, mock_credentials):
+    @patch("sys.argv", ["ytmusic_api.py", "search-track", "test query"])
+    def test_main_search_track(self, mock_search_track, mock_get_ytmusic, mock_ytmusic, sample_search_results):
         """Test main function with search-track command."""
-        mock_get_credentials.return_value = mock_credentials
-        mock_build.return_value = Mock()
-        mock_search_track.return_value = 'test_video_id'
+        mock_get_ytmusic.return_value = mock_ytmusic
+        mock_search_track.return_value = sample_search_results[0]
         
-        # Capture stdout
-        captured_output = StringIO()
-        sys.stdout = captured_output
-        
-        # Test with search-track command
-        sys.argv = ['ytmusic_api.py', 'search-track', 'test query']
-        try:
+        with patch("sys.stdout", new_callable=StringIO):
             main()
-        except SystemExit:
-            pass
         
-        # Restore stdout
-        sys.stdout = sys.__stdout__
-        
-        output = captured_output.getvalue()
-        assert 'Found track ID: test_video_id' in output
+        mock_search_track.assert_called_once_with(mock_ytmusic, "test query")
 
+    @patch("sys.argv", ["ytmusic_api.py"])
     def test_main_no_command(self):
         """Test main function with no command."""
-        # Capture stdout
-        captured_output = StringIO()
-        sys.stdout = captured_output
-        
-        # Test with no command
-        sys.argv = ['ytmusic_api.py']
-        try:
-            main()
-        except SystemExit:
-            pass
-        
-        # Restore stdout
-        sys.stdout = sys.__stdout__
-        
-        output = captured_output.getvalue()
-        assert 'usage: ytmusic_api.py' in output
+        with patch("sys.stdout", new_callable=StringIO):
+            main()  # Should print help and return

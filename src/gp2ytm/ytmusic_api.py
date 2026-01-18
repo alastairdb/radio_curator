@@ -1,20 +1,13 @@
+# TDOD: adapt these tests to the latest version of ytmusic_api.py
 import os
 import sys
 import argparse
 import json
+import unicodedata
 from typing import List, Tuple, Optional, Dict, Any
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build, Resource
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
+from ytmusicapi import YTMusic
+from ytmusicapi.setup import setup
 import pathlib
-
-# Add YouTube Data API scope for playlist management
-SCOPES = [
-    'https://www.googleapis.com/auth/userinfo.email', 
-    'openid',
-    'https://www.googleapis.com/auth/youtube'  # Add this for YouTube access
-]
 
 # Simple in-memory cache for search results
 _search_cache: Dict[str, str] = {}
@@ -22,6 +15,7 @@ _search_cache: Dict[str, str] = {}
 XDG_CACHE_HOME = os.environ.get('XDG_CACHE_HOME', os.path.join(pathlib.Path.home(), '.cache'))
 CACHE_DIR = os.path.join(XDG_CACHE_HOME, 'gp2ytm')
 CACHE_FILE = os.path.join(CACHE_DIR, 'search_cache.json')
+HEADERS_FILE = os.path.join(CACHE_DIR, 'headers_auth.json')
 
 def load_cache() -> None:
     """Load search cache from file"""
@@ -43,144 +37,197 @@ def save_cache() -> None:
     except Exception:
         pass
 
-def get_credentials() -> Credentials:
-    creds = None
-    # The file token.json stores the user's access and refresh tokens
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        
-        # Save the credentials for the next run
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-    return creds
+def get_ytmusic() -> YTMusic:
+    """Get YTMusic instance with authentication"""
+    if os.path.exists(HEADERS_FILE):
+        return YTMusic(HEADERS_FILE)
+    else:
+        print(f"Headers authentication file not found at {HEADERS_FILE}")
+        print("Please create headers_auth.json using YTMusic.setup() or place it in the cache directory")
+        sys.exit(1)
 
-def find_playlist(youtube_service: Resource, title: str) -> Optional[str]:
+def find_playlist(ytmusic: YTMusic, title: str) -> Optional[str]:
     """Check if a playlist with the given title already exists"""
     try:
-        request = youtube_service.playlists().list(
-            part='snippet',
-            mine=True,
-            maxResults=50
-        )
-        response = request.execute()
-        
-        for item in response.get('items', []):
-            if item['snippet']['title'] == title:
-                return item['id']
+        playlists = ytmusic.get_library_playlists(limit=None)
+        for playlist in playlists:
+            if playlist['title'] == title:
+                return playlist['playlistId']
     except Exception as e:
         print(f"Error checking for existing playlist: {e}", file=sys.stderr)
     
     return None
 
-def create_or_find_playlist(youtube_service: Resource, title: str, description: str = "", privacy_status: str = "private") -> Tuple[str, bool]:
+def create_or_find_playlist(ytmusic: YTMusic, title: str, description: str = "", privacy_status: str = "PRIVATE") -> Tuple[str, bool]:
     """Create a new playlist or return existing one. Returns (playlist_id, was_created)"""
-    existing_id = find_playlist(youtube_service, title)
+    existing_id = find_playlist(ytmusic, title)
     if existing_id:
         return existing_id, False
     
-    playlist_body = {
-        'snippet': {
-            'title': title,
-            'description': description
-        },
-        'status': {
-            'privacyStatus': privacy_status
-        }
-    }
-    
-    request = youtube_service.playlists().insert(
-        part='snippet,status',
-        body=playlist_body
-    )
-    response = request.execute()
-    return response['id'], True
+    playlist_id = ytmusic.create_playlist(title, description, privacy_status)
+    return playlist_id, True
 
-def add_tracks_to_playlist(youtube_service: Resource, playlist_id: str, video_ids: List[str]) -> Tuple[List[Dict[str, Any]], List[Tuple[str, str]]]:
+def add_tracks_to_playlist(ytmusic: YTMusic, playlist_id: str, video_ids: List[str]) -> Tuple[List[Dict[str, Any]], List[Tuple[str, str]]]:
     """Add multiple tracks to a YouTube playlist in batch"""
     responses: List[Dict[str, Any]] = []
     errors: List[Tuple[str, str]] = []
     
-    for video_id in video_ids:
-        try:
-            request_body = {
-                'snippet': {
-                    'playlistId': playlist_id,
-                    'resourceId': {
-                        'kind': 'youtube#video',
-                        'videoId': video_id
-                    }
-                }
-            }
-            
-            request = youtube_service.playlistItems().insert(
-                part='snippet',
-                body=request_body
-            )
-            response = request.execute()
-            responses.append(response)
-        except Exception as e:
-            errors.append((video_id, str(e)))
+    try:
+        # ytmusicapi can add multiple tracks at once
+        response = ytmusic.add_playlist_items(playlist_id, video_ids)
+        responses.append(response)
+    except Exception as e:
+        # If batch add fails, try adding individually
+        for video_id in video_ids:
+            try:
+                response = ytmusic.add_playlist_items(playlist_id, [video_id])
+                responses.append(response)
+            except Exception as individual_e:
+                errors.append((video_id, str(individual_e)))
     
     return responses, errors
 
-def search_track(youtube_service: Resource, query: str) -> Optional[str]:
-    """Search for a music track on YouTube Music with optimized search"""
-    # Try just the most effective search variation
-    search_query = query + " official audio"
-    
+def search_track(ytmusic: YTMusic, query: str, expected_artist: str = "", expected_title: str = "") -> Optional[Dict[str, Any]]:
+    """Search for a music track on YouTube Music and return the best match with details"""
     try:
-        request = youtube_service.search().list(
-            part='snippet',
-            q=search_query,
-            type='video',
-            videoCategoryId='10',  # Music category
-            maxResults=1
-        )
-        response = request.execute()
+        # Search for songs first
+        results = ytmusic.search(query, filter="songs", limit=5)
         
-        if response['items']:
-            return response['items'][0]['id']['videoId']
+        # If we have expected artist/title, try to find the best match
+        if expected_artist and expected_title and results:
+            best_match = find_best_match(results, expected_artist, expected_title)
+            if best_match:
+                return best_match
+        
+        # If no good match found or no expected values, return first result
+        if results:
+            return results[0]
+        
+        # If no songs found, try videos
+        results = ytmusic.search(query, filter="videos", limit=5)
+        
+        if expected_artist and expected_title and results:
+            best_match = find_best_match(results, expected_artist, expected_title)
+            if best_match:
+                return best_match
+        
+        if results:
+            return results[0]
+            
     except Exception as e:
-        print(f"Search error for query '{search_query}': {e}", file=sys.stderr)
+        print(f"Search error for query '{query}': {e}", file=sys.stderr)
     
     return None
 
-def get_video_details(youtube_service: Resource, video_id: str) -> Optional[Dict[str, Any]]:
-    """Get details of a YouTube video by its ID"""
-    try:
-        request = youtube_service.videos().list(
-            part='snippet',
-            id=video_id
-        )
-        response = request.execute()
+def find_best_match(results: List[Dict[str, Any]], expected_artist: str, expected_title: str) -> Optional[Dict[str, Any]]:
+    """Find the best matching result based on artist and title"""
+    expected_artist_norm = normalize_text(expected_artist)
+    expected_title_norm = normalize_text(expected_title)
+    
+    for result in results:
+        # Get artist names from the result
+        artists = result.get('artists', [])
+        artist_names = [normalize_text(artist.get('name', '')) for artist in artists]
         
-        if response['items']:
-            return response['items'][0]['snippet']
-        return None
-    except Exception as e:
-        print(f"Error getting video details for {video_id}: {e}", file=sys.stderr)
-        return None
+        # Get title from result
+        result_title_norm = normalize_text(result.get('title', ''))
+        
+        # Check if expected artist matches any of the result artists (more flexible matching)
+        artist_match = any(
+            expected_artist_norm == artist_name or 
+            expected_artist_norm in artist_name or 
+            artist_name in expected_artist_norm 
+            for artist_name in artist_names
+        )
+        
+        # Check if expected title matches result title (more flexible matching)
+        title_match = (
+            expected_title_norm == result_title_norm or
+            expected_title_norm in result_title_norm or 
+            result_title_norm in expected_title_norm
+        )
+        
+        # If both match, this is a good result
+        if artist_match and title_match:
+            return result
+    
+    return None
 
-def search_track_with_cache(youtube_service: Resource, query: str) -> Optional[str]:
+def normalize_text(text: str) -> str:
+    """Normalize text for comparison by removing accents and normalizing quotes"""
+    if not text:
+        return ""
+    
+    # Convert to lowercase
+    text = text.lower()
+    
+    # First handle special characters that don't decompose with NFD
+    special_char_replacements = {
+        'ł': 'l',
+        'đ': 'd',
+        'ħ': 'h',
+        'ŧ': 't',
+        'ø': 'o',
+        'æ': 'ae',
+        'œ': 'oe',
+        'ß': 'ss',
+        'ð': 'd',
+        'þ': 'th',
+        'ŋ': 'ng',
+    }
+    
+    for special_char, replacement in special_char_replacements.items():
+        text = text.replace(special_char, replacement)
+    
+    # Normalize unicode characters (remove accents)
+    text = unicodedata.normalize('NFD', text)
+    text = ''.join(char for char in text if unicodedata.category(char) != 'Mn')
+    
+    # More comprehensive normalization of quotes and apostrophes
+    # Replace all apostrophe-like characters with standard ASCII apostrophe
+    apostrophe_chars = [
+        "’",
+    ]
+    
+    for apostrophe in apostrophe_chars:
+        text = text.replace(apostrophe, "'")
+    
+    # Replace quote characters
+    quote_chars = [
+        '"',  # U+201C LEFT DOUBLE QUOTATION MARK
+        '"',  # U+201D RIGHT DOUBLE QUOTATION MARK
+    ]
+    
+    for quote in quote_chars:
+        text = text.replace(quote, '"')
+    
+    return text
+
+def get_artist_names(result: Dict[str, Any]) -> str:
+    """Extract artist names from a search result"""
+    artists = result.get('artists', [])
+    if artists:
+        return ', '.join(artist.get('name', '') for artist in artists)
+    return 'Unknown Artist'
+
+def search_track_with_cache(ytmusic: YTMusic, query: str, expected_artist: str = "", expected_title: str = "") -> Optional[Dict[str, Any]]:
     """Search for a track with caching"""
     # Load cache if not already loaded
     if not _search_cache:
         load_cache()
     
+    # For caching, we'll use just the video ID but return full result
     if query in _search_cache:
-        return _search_cache[query]
+        video_id = _search_cache[query]
+        # We need to search again to get full details, but this should be fast
+        # since we know the video exists
+        result = search_track(ytmusic, query, expected_artist, expected_title)
+        if result and result.get('videoId') == video_id:
+            return result
     
-    result = search_track(youtube_service, query)
+    result = search_track(ytmusic, query, expected_artist, expected_title)
     if result:
-        _search_cache[query] = result
+        _search_cache[query] = result.get('videoId')
         save_cache()
     return result
 
@@ -189,11 +236,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description='YouTube Music API tools')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
+    # Setup subcommand for initial authentication
+    setup_parser = subparsers.add_parser('setup', help='Setup YTMusic authentication')
+    
     # Create playlist subcommand
     create_parser = subparsers.add_parser('create-playlist', help='Create a new YouTube playlist')
     create_parser.add_argument('name', help='Name of the playlist to create')
     create_parser.add_argument('description', nargs='?', default='', help='Description of the playlist')
-    create_parser.add_argument('privacy', nargs='?', default='private', choices=['public', 'private', 'unlisted'], help='Privacy status of the playlist')
+    create_parser.add_argument('privacy', nargs='?', default='PRIVATE', choices=['PUBLIC', 'PRIVATE', 'UNLISTED'], help='Privacy status of the playlist')
     
     # Search track subcommand
     search_parser = subparsers.add_parser('search-track', help='Search for a track and return its ID')
@@ -214,11 +264,19 @@ def main() -> None:
         parser.print_help()
         return
     
-    creds = get_credentials()
-    youtube_service: Resource = build('youtube', 'v3', credentials=creds)
+    if args.command == 'setup':
+        # Ensure cache directory exists
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        print(f"Setting up YTMusic authentication...")
+        print(f"Headers file will be saved to: {HEADERS_FILE}")
+        setup(filepath=HEADERS_FILE)
+        print("Setup complete!")
+        return
+    
+    ytmusic = get_ytmusic()
     
     if args.command == 'create-playlist':
-        playlist_id, was_created = create_or_find_playlist(youtube_service, args.name, args.description, args.privacy)
+        playlist_id, was_created = create_or_find_playlist(ytmusic, args.name, args.description, args.privacy)
         if was_created:
             print(f"Created playlist: {args.name}")
         else:
@@ -226,20 +284,26 @@ def main() -> None:
         print(f"Playlist ID: {playlist_id}")
     
     elif args.command == 'search-track':
-        video_id = search_track_with_cache(youtube_service, args.query)
-        if video_id:
+        result = search_track_with_cache(ytmusic, args.query)
+        if result:
+            video_id = result.get('videoId')
+            title = result.get('title', 'Unknown')
+            artist = get_artist_names(result)
             print(f"Found track ID: {video_id}")
+            print(f"Title: {title}")
+            print(f"Artist: {artist}")
         else:
             print("No track found for the given query")
     
     # Add track to playlist subcommand
     elif args.command == 'add-track':
-        responses, errors = add_tracks_to_playlist(youtube_service, args.playlist_id, [args.video_id])
+        responses, errors = add_tracks_to_playlist(ytmusic, args.playlist_id, [args.video_id])
         if errors:
             print(f"Error adding track {args.video_id} to playlist {args.playlist_id}: {errors[0][1]}")
         else:
             print(f"Added track {args.video_id} to playlist {args.playlist_id}")
-            print(f"Playlist item ID: {responses[0]['id']}")
+            if responses:
+                print(f"Response: {responses[0]}")
     
     elif args.command == 'print-tracks':
         # Split the query string by commas and search for each track
@@ -248,11 +312,16 @@ def main() -> None:
         
         for i, query in enumerate(queries, 1):
             print(f"\nTrack {i}/{len(queries)}: {query}")
-            video_id = search_track_with_cache(youtube_service, query)
+            result = search_track_with_cache(ytmusic, query)
             
-            if video_id:
+            if result:
+                video_id = result.get('videoId')
+                title = result.get('title', 'Unknown')
+                artist = get_artist_names(result)
                 print(f"Found: {query}")
                 print(f"Video ID: {video_id}")
+                print(f"Title: {title}")
+                print(f"Artist: {artist}")
                 print(f"YouTube URL: https://www.youtube.com/watch?v={video_id}")
             else:
                 print(f"Not found: {query}")
