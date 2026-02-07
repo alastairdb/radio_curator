@@ -91,28 +91,27 @@ def search_track(ytmusic: YTMusic, query: str, expected_artist: str = "", expect
     """Search for a music track on YouTube Music and return the best match with details"""
     try:
         # Search for songs first
-        results = ytmusic.search(query, filter="songs", limit=5)
+        songs_results = ytmusic.search(query, filter="songs", limit=5)
+
+        # If we have expected artist/title, try to find exact match in songs
+        if expected_artist and expected_title and songs_results:
+            exact_match = find_best_match(songs_results, expected_artist, expected_title)
+            if exact_match:
+                return exact_match
+        # If no exact match in songs, try videos
+        videos_results = ytmusic.search(query, filter="videos", limit=5)
+
+        if expected_artist and expected_title and videos_results:
+            exact_match = find_best_match(videos_results, expected_artist, expected_title)
+            if exact_match:
+                return exact_match
         
-        # If we have expected artist/title, try to find the best match
-        if expected_artist and expected_title and results:
-            best_match = find_best_match(results, expected_artist, expected_title)
-            if best_match:
-                return best_match
-        
-        # If no good match found or no expected values, return first result
-        if results:
-            return results[0]
-        
-        # If no songs found, try videos
-        results = ytmusic.search(query, filter="videos", limit=5)
-        
-        if expected_artist and expected_title and results:
-            best_match = find_best_match(results, expected_artist, expected_title)
-            if best_match:
-                return best_match
-        
-        if results:
-            return results[0]
+        # If no exact match found in either songs or videos, fall back to first result
+        # Prefer songs over videos if both have results
+        if songs_results:
+            return songs_results[0]
+        elif videos_results:
+            return videos_results[0]
             
     except Exception as e:
         print(f"Search error for query '{query}': {e}", file=sys.stderr)
@@ -140,6 +139,11 @@ def find_best_match(results: List[Dict[str, Any]], expected_artist: str, expecte
             for artist_name in artist_names
         )
         
+        # For video results, also check if artist appears in the title
+        # This handles cases where videos have "Artist - Song" format in title
+        if not artist_match:
+            artist_match = expected_artist_norm in result_title_norm
+        
         # Check if expected title matches result title (more flexible matching)
         title_match = (
             expected_title_norm == result_title_norm or
@@ -164,16 +168,26 @@ def normalize_text(text: str) -> str:
     # First handle special characters that don't decompose with NFD
     special_char_replacements = {
         'ł': 'l',
-        'đ': 'd',
+        'đ': 'd',  # U+0111 LATIN SMALL LETTER D WITH STROKE
         'ħ': 'h',
         'ŧ': 't',
         'ø': 'o',
         'æ': 'ae',
         'œ': 'oe',
         'ß': 'ss',
-        'ð': 'd',
+        'ð': 'd',  # U+00F0 LATIN SMALL LETTER ETH
         'þ': 'th',
         'ŋ': 'ng',
+        'Ł': 'L',  # U+0141 LATIN CAPITAL LETTER L WITH STROKE
+        'Đ': 'D',  # U+0110 LATIN CAPITAL LETTER D WITH STROKE
+        'Ħ': 'H',  # U+0126 LATIN CAPITAL LETTER H WITH STROKE
+        'Ŧ': 'T',  # U+0166 LATIN CAPITAL LETTER T WITH STROKE
+        'Ø': 'O',  # U+00D8 LATIN CAPITAL LETTER O WITH STROKE
+        'Æ': 'AE', # U+00C6 LATIN CAPITAL LETTER AE
+        'Œ': 'OE', # U+0152 LATIN CAPITAL LIGATURE OE
+        'Ð': 'D',  # U+00D0 LATIN CAPITAL LETTER ETH
+        'Þ': 'TH', # U+00DE LATIN CAPITAL LETTER THORN
+        'Ŋ': 'NG', # U+014A LATIN CAPITAL LETTER ENG
     }
     
     for special_char, replacement in special_char_replacements.items():
