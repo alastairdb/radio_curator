@@ -13,7 +13,7 @@ import pathlib
 _search_cache: Dict[str, str] = {}
 # File to persist cache between runs in a proper cache directory
 XDG_CACHE_HOME = os.environ.get('XDG_CACHE_HOME', os.path.join(pathlib.Path.home(), '.cache'))
-CACHE_DIR = os.path.join(XDG_CACHE_HOME, 'gp2ytm')
+CACHE_DIR = os.path.join(XDG_CACHE_HOME, 'radio_curator')
 CACHE_FILE = os.path.join(CACHE_DIR, 'search_cache.json')
 HEADERS_FILE = os.path.join(CACHE_DIR, 'headers_auth.json')
 

@@ -1,10 +1,10 @@
-;;; gp2ytm-draft-helper.el --- Helper functions for editing GP2YTM draft files
+;;; ytm-draft.el --- Helper functions for editing YTM draft files
 
 ;;; Commentary:
-;; This file provides helper functions for editing GP2YTM draft JSON files in Emacs.
+;; This file provides helper functions for editing YTM draft JSON files in Emacs.
 ;;
 ;; The default keybindings use the prefix "C-c p" but this can be customized
-;; by setting `gp2ytm-draft-prefix' to your preferred prefix.
+;; by setting `ytm-draft-prefix' to your preferred prefix.
 ;;
 ;; Default keybindings:
 ;; C-c p c - Copy track info to clipboard
@@ -15,11 +15,11 @@
 
 ;;; Code:
 
-(defgroup gp2ytm nil
-  "GP2YTM draft editing tools."
+(defgroup ytm nil
+  "YTM draft editing tools."
   :group 'tools)
 
-(defun gp2ytm-copy-track-info ()
+(defun ytm-draft-copy-track-info ()
   "Narrow to current track object, copy bbc_artist and bbc_title to clipboard, then widen."
   (interactive)
   (save-excursion
@@ -86,7 +86,7 @@
         
         (message "Could not find track object boundaries")))))
 
-(defun gp2ytm-toggle-include ()
+(defun ytm-draft-toggle-include ()
   "Toggle the 'include' field of the current track between true and false."
   (interactive)
   (save-excursion
@@ -146,7 +146,7 @@
         
         (message "Could not find track object boundaries")))))
 
-(defun gp2ytm-next-track ()
+(defun ytm-draft-next-track ()
   "Move to the next track object in the JSON file."
   (interactive)
   (let ((current-pos (point)))
@@ -157,7 +157,7 @@
       (goto-char current-pos)
       (message "No more tracks found"))))
 
-(defun gp2ytm-prev-track ()
+(defun ytm-draft-prev-track ()
   "Move to the previous track object in the JSON file."
   (interactive)
   (let ((current-pos (point)))
@@ -168,7 +168,7 @@
       (goto-char current-pos)
       (message "No previous tracks found"))))
 
-(defun gp2ytm-set-video-id ()
+(defun ytm-draft-set-video-id ()
   "Set the video_id field of the current track to the value from clipboard."
   (interactive)
   (save-excursion
@@ -248,73 +248,73 @@
         
         (message "Could not find track object boundaries")))))
 
-;; Customizable prefix for GP2YTM keybindings
-(defcustom gp2ytm-draft-prefix "C-c p"
-  "Prefix key for GP2YTM draft mode commands."
+;; Customizable prefix for YTM keybindings
+(defcustom ytm-draft-prefix "C-c p"
+  "Prefix key for YTM draft mode commands."
   :type 'string
-  :group 'gp2ytm)
+  :group 'ytm)
 
-;; Define a minor mode for GP2YTM draft editing
-(defvar gp2ytm-draft-mode-map
+;; Define a minor mode for YTM draft editing
+(defvar ytm-draft-mode-map
   (let ((map (make-sparse-keymap)))
     ;; We'll set up the keybindings dynamically based on the prefix
     map)
-  "Keymap for GP2YTM draft mode.")
+  "Keymap for YTM draft mode.")
 
-(defun gp2ytm-setup-keybindings ()
-  "Set up keybindings for GP2YTM draft mode using the configured prefix."
-  (let ((map gp2ytm-draft-mode-map)
-        (prefix gp2ytm-draft-prefix))
+(defun ytm-draft-setup-keybindings ()
+  "Set up keybindings for YTM draft mode using the configured prefix."
+  (let ((map ytm-draft-mode-map)
+        (prefix ytm-draft-prefix))
     ;; Clear existing bindings
     (setcdr map nil)
     ;; Set up new bindings with the configured prefix
-    (define-key map (kbd (concat prefix " c")) 'gp2ytm-copy-track-info)
-    (define-key map (kbd (concat prefix " t")) 'gp2ytm-toggle-include)
-    (define-key map (kbd (concat prefix " n")) 'gp2ytm-next-track)
-    (define-key map (kbd (concat prefix " p")) 'gp2ytm-prev-track)
-    (define-key map (kbd (concat prefix " v")) 'gp2ytm-set-video-id)))
+    (define-key map (kbd (concat prefix " c")) 'ytm-draft-copy-track-info)
+    (define-key map (kbd (concat prefix " t")) 'ytm-draft-toggle-include)
+    (define-key map (kbd (concat prefix " n")) 'ytm-draft-next-track)
+    (define-key map (kbd (concat prefix " p")) 'ytm-draft-prev-track)
+    (define-key map (kbd (concat prefix " v")) 'ytm-draft-set-video-id)))
 
 ;; Set up initial keybindings
-(gp2ytm-setup-keybindings)
+(ytm-draft-setup-keybindings)
 
 ;; Update keybindings when the prefix is customized
-(defun gp2ytm-update-prefix ()
+(defun ytm-draft-update-prefix ()
   "Update keybindings when the prefix is changed."
-  (gp2ytm-setup-keybindings))
+  (ytm-draft-setup-keybindings))
 
-(add-hook 'gp2ytm-draft-prefix-changed-hook 'gp2ytm-update-prefix)
+(add-hook 'ytm-draft-prefix-changed-hook 'ytm-draft-update-prefix)
 
-(define-minor-mode gp2ytm-draft-mode
-  "Minor mode for editing GP2YTM draft JSON files.
+(define-minor-mode ytm-draft-mode
+  "Minor mode for editing YTM draft JSON files.
 
 Key bindings (with default prefix 'C-c p'):
-\\<gp2ytm-draft-mode-map>
-\\[gp2ytm-copy-track-info] - Copy track info to clipboard
-\\[gp2ytm-toggle-include] - Toggle include field
-\\[gp2ytm-next-track] - Move to next track
-\\[gp2ytm-prev-track] - Move to previous track
-\\[gp2ytm-set-video-id] - Set video_id from clipboard
+\\<ytm-draft-mode-map>
+\\[ytm-draft-copy-track-info] - Copy track info to clipboard
+\\[ytm-draft-toggle-include] - Toggle include field
+\\[ytm-draft-next-track] - Move to next track
+\\[ytm-draft-prev-track] - Move to previous track
+\\[ytm-draft-set-video-id] - Set video_id from clipboard
 
-The prefix can be customized by setting `gp2ytm-draft-prefix'."
-  :lighter " GP2YTM"
-  :keymap gp2ytm-draft-mode-map
-  :group 'gp2ytm
+The prefix can be customized by setting `ytm-draft-prefix'."
+  :lighter " YTM"
+  :keymap ytm-draft-mode-map
+  :group 'ytm
   ;; Set up keybindings when the mode is enabled
-  (when gp2ytm-draft-mode
-    (gp2ytm-setup-keybindings)))
+  (when ytm-draft-mode
+    (ytm-draft-setup-keybindings)))
 
-;; Auto-enable the mode for .json files that look like GP2YTM drafts
-(defun gp2ytm-maybe-enable-draft-mode ()
-  "Enable gp2ytm-draft-mode if the current buffer looks like a GP2YTM draft file."
+;; Auto-enable the mode for .json files that look like YTM drafts
+(defun ytm-draft-maybe-enable-mode ()
+  "Enable ytm-draft-mode if the current buffer looks like a YTM draft file."
   (when (and (string-match "\\.json\\'" (or buffer-file-name ""))
              (save-excursion
                (goto-char (point-min))
                (search-forward "\"bbc_artist\"" nil t)))
-    (gp2ytm-draft-mode 1)))
+    (ytm-draft-mode 1)))
 
-(add-hook 'json-mode-hook 'gp2ytm-maybe-enable-draft-mode)
-(add-hook 'js-mode-hook 'gp2ytm-maybe-enable-draft-mode)
+(add-hook 'json-mode-hook 'ytm-draft-maybe-enable-mode)
+(add-hook 'js-mode-hook 'ytm-draft-maybe-enable-mode)
 
-(provide 'gp2ytm-draft-helper)
+(provide 'ytm-draft)
 
-;;; gp2ytm-draft-helper.el ends here
+;;; ytm-draft.el ends here

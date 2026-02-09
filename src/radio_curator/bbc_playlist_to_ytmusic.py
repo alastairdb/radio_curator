@@ -463,7 +463,7 @@ def main() -> None:
         save_draft(title, tracks, args.program_id, output_file, broadcast_date, description)
         
         print(f"\nYou can now edit the draft file '{output_file}' to modify tracks before creating the playlist.", file=sys.stderr)
-        print(f"To create the playlist, run: gp2ytm bbc create --draft {output_file}", file=sys.stderr)
+        print(f"To create the playlist, run: radio_curator bbc create --draft {output_file}", file=sys.stderr)
 
     elif args.command in ['create', 'print']:
         # Load playlist data from either BBC or draft file

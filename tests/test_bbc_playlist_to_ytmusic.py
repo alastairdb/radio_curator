@@ -7,7 +7,7 @@ import json
 import tempfile
 import os
 from io import StringIO
-from src.gp2ytm.bbc_playlist_to_ytmusic import (
+from src.radio_curator.bbc_playlist_to_ytmusic import (
     parse_bbc_playlist, create_youtube_playlist, create_youtube_playlist_from_draft,
     save_draft, load_draft, main
 )
@@ -165,7 +165,7 @@ def sample_draft_data(sample_draft_tracks):
 class TestParseBbcPlaylist:
     """Tests for parse_bbc_playlist function."""
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.requests.get")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.requests.get")
     def test_parse_bbc_playlist_success(self, mock_get, mock_bbc_html):
         """Test successful BBC playlist parsing."""
         mock_response = Mock()
@@ -183,7 +183,7 @@ class TestParseBbcPlaylist:
         assert "This is a test programme description." in description
         assert "It has multiple paragraphs." in description
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.requests.get")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.requests.get")
     def test_parse_bbc_playlist_minimal(self, mock_get, mock_bbc_html_minimal):
         """Test BBC playlist parsing with minimal content."""
         mock_response = Mock()
@@ -199,7 +199,7 @@ class TestParseBbcPlaylist:
         assert broadcast_date == ""
         assert description == ""
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.requests.get")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.requests.get")
     def test_parse_bbc_playlist_no_music_section(self, mock_get, mock_bbc_html_no_music):
         """Test BBC playlist parsing with no music section."""
         mock_response = Mock()
@@ -210,7 +210,7 @@ class TestParseBbcPlaylist:
         with pytest.raises(ValueError, match="Expecting 'Music Played' section"):
             parse_bbc_playlist("test_program_id")
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.requests.get")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.requests.get")
     def test_parse_bbc_playlist_request_error(self, mock_get):
         """Test BBC playlist parsing with request error."""
         mock_get.side_effect = Exception("Network error")
@@ -221,7 +221,7 @@ class TestParseBbcPlaylist:
         assert broadcast_date == ""
         assert description == ""
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.requests.get")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.requests.get")
     def test_parse_bbc_playlist_invalid_date(self, mock_get):
         """Test BBC playlist parsing with invalid date format."""
         html_with_invalid_date = """
@@ -253,7 +253,7 @@ class TestParseBbcPlaylist:
         
         assert broadcast_date == ""  # Should handle invalid date gracefully
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.requests.get")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.requests.get")
     def test_parse_bbc_playlist_no_segments_list(self, mock_get):
         """Test BBC playlist parsing with no segments list."""
         html_no_segments = """
@@ -273,7 +273,7 @@ class TestParseBbcPlaylist:
         with pytest.raises(ValueError, match="Expecting a track listing"):
             parse_bbc_playlist("test_program_id")
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.requests.get")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.requests.get")
     def test_parse_bbc_playlist_no_music_items(self, mock_get):
         """Test BBC playlist parsing with no music items."""
         html_no_music_items = """
@@ -300,11 +300,11 @@ class TestParseBbcPlaylist:
 class TestCreateYoutubePlaylist:
     """Tests for create_youtube_playlist function."""
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.time.sleep")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.search_track_with_cache")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.sleep")
     def test_create_youtube_playlist_success(
         self, mock_sleep, mock_add_tracks, mock_search_track, mock_create_playlist, 
         mock_get_ytmusic, mock_ytmusic, sample_tracks
@@ -347,10 +347,10 @@ class TestCreateYoutubePlaylist:
         assert mock_search_track.call_count == 3
         mock_add_tracks.assert_called_once()
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.time.sleep")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.search_track_with_cache")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.sleep")
     def test_create_youtube_playlist_with_prefix_and_date(
         self, mock_sleep, mock_search_track, mock_create_playlist, 
         mock_get_ytmusic, mock_ytmusic, sample_tracks
@@ -368,10 +368,10 @@ class TestCreateYoutubePlaylist:
         expected_title = "BBC6-2025-12-27: Test Playlist"
         mock_create_playlist.assert_called_once_with(mock_ytmusic, expected_title, "Test description")
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.time.sleep")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.search_track_with_cache")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.sleep")
     def test_create_youtube_playlist_not_found(
         self, mock_sleep, mock_search_track, mock_create_playlist, 
         mock_get_ytmusic, mock_ytmusic
@@ -387,11 +387,11 @@ class TestCreateYoutubePlaylist:
         assert len(not_found) == 1
         assert not_found[0] == {"artist": "Unknown Artist", "title": "Unknown Track"}
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.time.sleep")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.search_track_with_cache")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.sleep")
     def test_create_youtube_playlist_mismatched_tracks(
         self, mock_sleep, mock_add_tracks, mock_search_track, mock_create_playlist, 
         mock_get_ytmusic, mock_ytmusic
@@ -413,11 +413,11 @@ class TestCreateYoutubePlaylist:
         assert len(not_found) == 1
         assert not_found[0] == {"artist": "Original Artist", "title": "Original Track"}
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.time.sleep")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.search_track_with_cache")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.sleep")
     def test_create_youtube_playlist_add_tracks_error(
         self, mock_sleep, mock_add_tracks, mock_search_track, mock_create_playlist, 
         mock_get_ytmusic, mock_ytmusic, sample_tracks
@@ -440,9 +440,9 @@ class TestCreateYoutubePlaylist:
 class TestCreateYoutubePlaylistFromDraft:
     """Tests for create_youtube_playlist_from_draft function."""
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
     def test_create_youtube_playlist_from_draft_success(
         self, mock_add_tracks, mock_create_playlist, mock_get_ytmusic, 
         mock_ytmusic, sample_draft_tracks
@@ -458,8 +458,8 @@ class TestCreateYoutubePlaylistFromDraft:
         mock_add_tracks.assert_called_once_with(mock_ytmusic, 'test_playlist_id', ['video_id_1'])
         assert len(not_included) == 2  # Two tracks not included
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
     def test_create_youtube_playlist_from_draft_no_tracks(
         self, mock_create_playlist, mock_get_ytmusic, mock_ytmusic
     ):
@@ -480,9 +480,9 @@ class TestCreateYoutubePlaylistFromDraft:
         
         assert len(not_included) == 0  # Empty list returned when no tracks to add
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
     def test_create_youtube_playlist_from_draft_with_prefix(
         self, mock_add_tracks, mock_create_playlist, mock_get_ytmusic, 
         mock_ytmusic, sample_draft_tracks
@@ -500,9 +500,9 @@ class TestCreateYoutubePlaylistFromDraft:
         expected_title = "BBC6-2025-12-27: Test Playlist"
         mock_create_playlist.assert_called_once_with(mock_ytmusic, expected_title, "Test description")
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_or_find_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
     def test_create_youtube_playlist_from_draft_add_error(
         self, mock_add_tracks, mock_create_playlist, mock_get_ytmusic, 
         mock_ytmusic, sample_draft_tracks
@@ -520,11 +520,11 @@ class TestCreateYoutubePlaylistFromDraft:
 class TestSaveDraft:
     """Tests for save_draft function."""
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.time.sleep")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.search_track_with_cache")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.sleep")
     @patch("builtins.open", new_callable=mock_open)
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.time.strftime")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.strftime")
     def test_save_draft_success(
         self, mock_strftime, mock_file, mock_sleep, mock_search_track, 
         mock_get_ytmusic, mock_ytmusic, sample_tracks
@@ -572,9 +572,9 @@ class TestSaveDraft:
         full_written_data = ''.join(written_data)
         assert '"playlist_title": "Test Playlist"' in full_written_data
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.time.sleep")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.search_track_with_cache")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.sleep")
     @patch("builtins.open", new_callable=mock_open)
     def test_save_draft_track_not_found(
         self, mock_file, mock_sleep, mock_search_track, 
@@ -598,9 +598,9 @@ class TestSaveDraft:
         full_written_data = ''.join(written_data)
         assert '"status": "not_found"' in full_written_data
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.get_ytmusic")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.search_track_with_cache")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.time.sleep")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.search_track_with_cache")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.sleep")
     @patch("builtins.open", new_callable=mock_open)
     def test_save_draft_suspect_match(
         self, mock_file, mock_sleep, mock_search_track, 
@@ -658,8 +658,8 @@ class TestLoadDraft:
 class TestMain:
     """Tests for main function."""
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.parse_bbc_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.save_draft")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.parse_bbc_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.save_draft")
     @patch("sys.argv", ["script", "draft", "test_program_id"])
     def test_main_draft_command(self, mock_save_draft, mock_parse_playlist, sample_tracks):
         """Test main function with draft command."""
@@ -672,8 +672,8 @@ class TestMain:
             "Test Playlist", sample_tracks, "test_program_id", "test_program_id.json", "2025-12-27", "Test description"
         )
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.parse_bbc_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_youtube_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.parse_bbc_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_youtube_playlist")
     @patch("sys.argv", ["script", "create", "--program-id", "test_program_id"])
     def test_main_create_command_with_program_id(self, mock_create_playlist, mock_parse_playlist, sample_tracks):
         """Test main function with create command using program ID."""
@@ -685,8 +685,8 @@ class TestMain:
         
         mock_create_playlist.assert_called_once_with("Test Playlist", sample_tracks, None, "2025-12-27", "Test description")
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.load_draft")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_youtube_playlist_from_draft")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.load_draft")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_youtube_playlist_from_draft")
     @patch("sys.argv", ["script", "create", "--draft", "test.json"])
     def test_main_create_command_with_draft(self, mock_create_from_draft, mock_load_draft, sample_draft_tracks):
         """Test main function with create command using draft file."""
@@ -698,7 +698,7 @@ class TestMain:
         
         mock_create_from_draft.assert_called_once_with("Test Playlist", sample_draft_tracks, None, "2025-12-27", "Test description")
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.parse_bbc_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.parse_bbc_playlist")
     @patch("sys.argv", ["script", "print", "--program-id", "test_program_id"])
     def test_main_print_command_with_program_id(self, mock_parse_playlist, sample_tracks):
         """Test main function with print command using program ID."""
@@ -712,7 +712,7 @@ class TestMain:
         assert "1. Artist One - Track One" in output
         assert "2. Artist Two - Track Two" in output
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.load_draft")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.load_draft")
     @patch("sys.argv", ["script", "print", "--draft", "test.json"])
     def test_main_print_command_with_draft(self, mock_load_draft, sample_draft_tracks):
         """Test main function with print command using draft file."""
@@ -740,7 +740,7 @@ class TestMain:
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.parse_bbc_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.parse_bbc_playlist")
     @patch("sys.argv", ["script", "create", "--program-id", "test_program_id"])
     def test_main_parse_failure(self, mock_parse_playlist):
         """Test main function when BBC playlist parsing fails."""
@@ -750,7 +750,7 @@ class TestMain:
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.load_draft")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.load_draft")
     @patch("sys.argv", ["script", "create", "--draft", "test.json"])
     def test_main_load_draft_failure(self, mock_load_draft):
         """Test main function when draft loading fails."""
@@ -760,8 +760,8 @@ class TestMain:
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.parse_bbc_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.save_draft")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.parse_bbc_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.save_draft")
     @patch("sys.argv", ["script", "draft", "test_program_id", "--output", "custom.json"])
     def test_main_draft_custom_output(self, mock_save_draft, mock_parse_playlist, sample_tracks):
         """Test main function with draft command and custom output filename."""
@@ -774,8 +774,8 @@ class TestMain:
             "Test Playlist", sample_tracks, "test_program_id", "custom.json", "2025-12-27", "Test description"
         )
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.parse_bbc_playlist")
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.create_youtube_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.parse_bbc_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_youtube_playlist")
     @patch("sys.argv", ["script", "create", "--program-id", "test_program_id", "--prefix", "BBC6"])
     def test_main_create_with_prefix(self, mock_create_playlist, mock_parse_playlist, sample_tracks):
         """Test main function with create command and prefix."""
@@ -787,7 +787,7 @@ class TestMain:
         
         mock_create_playlist.assert_called_once_with("Test Playlist", sample_tracks, "BBC6", "2025-12-27", "Test description")
 
-    @patch("src.gp2ytm.bbc_playlist_to_ytmusic.parse_bbc_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.parse_bbc_playlist")
     @patch("sys.argv", ["script", "draft", "test_program_id"])
     def test_main_draft_parse_failure(self, mock_parse_playlist):
         """Test main function with draft command when parsing fails."""

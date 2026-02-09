@@ -1,1 +1,1 @@
-"""Test package for gp2ytm."""
+"""Test package for radio_curator."""

@@ -1,13 +1,16 @@
-# GP2YTM - BBC Radio Playlist to YouTube Music Converter
+# Radio Curator - BBC Radio Show Downloader and Playlist Curator
 
-This tool (semi-)automatically converts BBC radio program playlists to YouTube Music playlists. It fetches the track listing from a BBC program page and creates a corresponding playlist in your YouTube Music account.
+This tool downloads BBC radio shows and curates their playlists. It can fetch track listings from BBC program pages, download radio shows using get_iplayer, and create corresponding playlists in your YouTube Music account.
 
 ## Features
 
+- Downloads BBC radio shows using get_iplayer
 - Fetches track listings from BBC radio program pages
+- Adds playlist metadata to downloaded audio files
 - Creates YouTube Music playlists with the same name as the BBC program
 - Automatically searches for tracks on YouTube Music
 - Handles authentication with Google/YouTube Music
+- Integrates with Jellyfin media server
 - Reports any tracks that couldn't be found
 - Can print tracks without creating a playlist
 
@@ -31,7 +34,7 @@ This tool (semi-)automatically converts BBC radio program playlists to YouTube M
 
 3. Set up YouTube Music authentication:
    ```bash
-   gp2ytm ytmusic-api setup
+   radio_curator ytmusic-api setup
    ```
    
    This will guide you through copying your browser's authentication headers. Follow these steps:
@@ -46,36 +49,52 @@ This tool (semi-)automatically converts BBC radio program playlists to YouTube M
 
 ## Usage
 
+### Download Radio Shows
+
+```bash
+# Download a BBC radio show
+radio_curator download <program_id>
+
+# Download with Jellyfin integration (set environment variables first)
+export JELLYFIN_LIBRARY_DIR="/path/to/jellyfin/music"
+export JELLYFIN_URL="http://localhost:8096"
+export JELLYFIN_API_TOKEN="your_api_token"
+radio_curator download <program_id>
+```
+
 ### BBC Playlist Commands
 
 ```bash
 # Parse BBC playlist and save as draft file for editing
-gp2ytm bbc draft <program_id> [--output FILENAME]
+radio_curator bbc draft <program_id> [--output FILENAME]
 
 # Create a YouTube Music playlist from a BBC program
-gp2ytm bbc create --program-id <program_id> [--prefix PREFIX]
+radio_curator bbc create --program-id <program_id> [--prefix PREFIX]
 
 # Create a YouTube Music playlist from a draft file
-gp2ytm bbc create --draft <draft_file> [--prefix PREFIX]
+radio_curator bbc create --draft <draft_file> [--prefix PREFIX]
 
 # Just print the tracks without creating a playlist
-gp2ytm bbc print --program-id <program_id>
-gp2ytm bbc print --draft <draft_file>
+radio_curator bbc print --program-id <program_id>
+radio_curator bbc print --draft <draft_file>
 ```
 
 Examples:
 ```bash
+# Download a radio show
+radio_curator download m0012345
+
 # Two-stage workflow (recommended)
-gp2ytm bbc draft m0012345
+radio_curator bbc draft m0012345
 # Edit m0012345.json as needed
-gp2ytm bbc create --draft m0012345.json
+radio_curator bbc create --draft m0012345.json
 
 # Direct creation (old workflow)
-gp2ytm bbc create --program-id m0012345
+radio_curator bbc create --program-id m0012345
 
 # Print tracks from BBC or draft
-gp2ytm bbc print --program-id m0012345
-gp2ytm bbc print --draft m0012345.json
+radio_curator bbc print --program-id m0012345
+radio_curator bbc print --draft m0012345.json
 ```
 
 The program ID can be found in the URL of any BBC radio program page. For example, in `https://www.bbc.co.uk/programmes/m0012345`, the program ID is `m0012345`.
@@ -83,7 +102,7 @@ The program ID can be found in the URL of any BBC radio program page. For exampl
 ### YouTube Music API Tools
 
 ```bash
-gp2ytm ytmusic-api <command> [arguments]
+radio_curator ytmusic-api <command> [arguments]
 ```
 
 Available commands:
@@ -95,17 +114,17 @@ Available commands:
 
 Examples:
 ```bash
-gp2ytm ytmusic-api setup
-gp2ytm ytmusic-api create-playlist "My Playlist" "Description" "PRIVATE"
-gp2ytm ytmusic-api search-track "Artist - Song Title"
-gp2ytm ytmusic-api add-track "playlist_id" "video_id"
-gp2ytm ytmusic-api print-tracks "Artist1 - Song1, Artist2 - Song2"
+radio_curator ytmusic-api setup
+radio_curator ytmusic-api create-playlist "My Playlist" "Description" "PRIVATE"
+radio_curator ytmusic-api search-track "Artist - Song Title"
+radio_curator ytmusic-api add-track "playlist_id" "video_id"
+radio_curator ytmusic-api print-tracks "Artist1 - Song1, Artist2 - Song2"
 ```
 
 ## First Run
 
 On first run, you'll need to authenticate with YouTube Music using browser headers:
-1. Run `gp2ytm ytmusic-api setup` to start the authentication process
+1. Run `radio_curator ytmusic-api setup` to start the authentication process
 2. Follow the prompts to copy your browser's request headers from YouTube Music
 3. The tool will save the authentication headers for future use (valid for ~2 years)
 

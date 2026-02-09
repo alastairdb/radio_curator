@@ -1,5 +1,5 @@
 {
-  description = "Development environment for gp2ytm";
+  description = "Development environment for radio_curator";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";

@@ -4,8 +4,8 @@ import pytest
 from unittest.mock import patch, Mock, mock_open
 import os
 from io import StringIO
-import src.gp2ytm.ytmusic_api
-from src.gp2ytm.ytmusic_api import (
+import src.radio_curator.ytmusic_api
+from src.radio_curator.ytmusic_api import (
     get_ytmusic, find_playlist, create_or_find_playlist, add_tracks_to_playlist,
     search_track, normalize_text, get_artist_names,
     search_track_with_cache, load_cache, save_cache, main, CACHE_DIR, CACHE_FILE
@@ -51,27 +51,27 @@ class TestCacheDirectory:
         with patch.dict(os.environ, {'XDG_CACHE_HOME': '/custom/cache'}):
             # Re-import to pick up the new environment variable
             import importlib
-            import src.gp2ytm.ytmusic_api
-            importlib.reload(src.gp2ytm.ytmusic_api)
-            from src.gp2ytm.ytmusic_api import CACHE_DIR
-            assert CACHE_DIR == '/custom/cache/gp2ytm'
+            import src.radio_curator.ytmusic_api
+            importlib.reload(src.radio_curator.ytmusic_api)
+            from src.radio_curator.ytmusic_api import CACHE_DIR
+            assert CACHE_DIR == '/custom/cache/radio_curator'
 
     def test_cache_dir_defaults_to_dot_cache(self):
         """Test that cache directory defaults to ~/.cache when XDG_CACHE_HOME is not set."""
         with patch.dict(os.environ, {}, clear=True):
             # Re-import to pick up the cleared environment
             import importlib
-            import src.gp2ytm.ytmusic_api
-            importlib.reload(src.gp2ytm.ytmusic_api)
-            from src.gp2ytm.ytmusic_api import CACHE_DIR
-            expected = os.path.join(os.path.expanduser('~'), '.cache', 'gp2ytm')
+            import src.radio_curator.ytmusic_api
+            importlib.reload(src.radio_curator.ytmusic_api)
+            from src.radio_curator.ytmusic_api import CACHE_DIR
+            expected = os.path.join(os.path.expanduser('~'), '.cache', 'radio_curator')
             assert CACHE_DIR == expected
 
 class TestGetYTMusic:
     """Tests for get_ytmusic function."""
 
-    @patch("src.gp2ytm.ytmusic_api.YTMusic")
-    @patch("src.gp2ytm.ytmusic_api.os.path.exists")
+    @patch("src.radio_curator.ytmusic_api.YTMusic")
+    @patch("src.radio_curator.ytmusic_api.os.path.exists")
     def test_get_ytmusic_success(self, mock_exists, mock_ytmusic_class, mock_ytmusic):
         """Test successful YTMusic instance creation."""
         mock_exists.return_value = True
@@ -82,7 +82,7 @@ class TestGetYTMusic:
         assert result == mock_ytmusic
         mock_ytmusic_class.assert_called_once()
 
-    @patch("src.gp2ytm.ytmusic_api.os.path.exists")
+    @patch("src.radio_curator.ytmusic_api.os.path.exists")
     def test_get_ytmusic_no_headers_file(self, mock_exists):
         """Test YTMusic instance creation when headers file doesn't exist."""
         mock_exists.return_value = False
@@ -117,7 +117,7 @@ class TestFindPlaylist:
 class TestCreateOrFindPlaylist:
     """Tests for create_or_find_playlist function."""
 
-    @patch("src.gp2ytm.ytmusic_api.find_playlist")
+    @patch("src.radio_curator.ytmusic_api.find_playlist")
     def test_create_playlist_new(self, mock_find_playlist, mock_ytmusic):
         """Test creating a new playlist."""
         mock_find_playlist.return_value = None
@@ -129,7 +129,7 @@ class TestCreateOrFindPlaylist:
         assert was_created is True
         mock_ytmusic.create_playlist.assert_called_once_with("New Playlist", "", "PRIVATE")
 
-    @patch("src.gp2ytm.ytmusic_api.find_playlist")
+    @patch("src.radio_curator.ytmusic_api.find_playlist")
     def test_create_playlist_existing(self, mock_find_playlist, mock_ytmusic):
         """Test finding an existing playlist."""
         mock_find_playlist.return_value = 'existing_playlist_id'
@@ -189,34 +189,34 @@ class TestCacheFunctions:
     def test_load_cache_success(self, monkeypatch):
         """Test successful cache loading."""
         # Mock os.path.exists to return True
-        monkeypatch.setattr("src.gp2ytm.ytmusic_api.os.path.exists", lambda x: True)
+        monkeypatch.setattr("src.radio_curator.ytmusic_api.os.path.exists", lambda x: True)
         
         # Mock open to return test data
         mock_file = mock_open(read_data='{"test query": "test_video_id"}')
         monkeypatch.setattr("builtins.open", mock_file)
         
         # Clear cache before test
-        src.gp2ytm.ytmusic_api._search_cache.clear()
+        src.radio_curator.ytmusic_api._search_cache.clear()
         
         load_cache()
-        assert "test query" in src.gp2ytm.ytmusic_api._search_cache
-        assert src.gp2ytm.ytmusic_api._search_cache["test query"] == "test_video_id"
+        assert "test query" in src.radio_curator.ytmusic_api._search_cache
+        assert src.radio_curator.ytmusic_api._search_cache["test query"] == "test_video_id"
 
     def test_load_cache_file_not_exists(self, monkeypatch):
         """Test cache loading when file doesn't exist."""
         # Mock os.path.exists to return False
-        monkeypatch.setattr("src.gp2ytm.ytmusic_api.os.path.exists", lambda x: False)
+        monkeypatch.setattr("src.radio_curator.ytmusic_api.os.path.exists", lambda x: False)
         
         # Clear cache before test
-        src.gp2ytm.ytmusic_api._search_cache.clear()
+        src.radio_curator.ytmusic_api._search_cache.clear()
         
         load_cache()
-        assert len(src.gp2ytm.ytmusic_api._search_cache) == 0
+        assert len(src.radio_curator.ytmusic_api._search_cache) == 0
 
     def test_load_cache_exception_handling(self, monkeypatch):
         """Test that load_cache handles exceptions gracefully."""
         # Mock os.path.exists to return True
-        monkeypatch.setattr("src.gp2ytm.ytmusic_api.os.path.exists", lambda x: True)
+        monkeypatch.setattr("src.radio_curator.ytmusic_api.os.path.exists", lambda x: True)
         
         # Mock open to raise an exception
         def mock_open_exception(*args, **kwargs):
@@ -224,32 +224,32 @@ class TestCacheFunctions:
         monkeypatch.setattr("builtins.open", mock_open_exception)
         
         # Set up cache with existing data
-        src.gp2ytm.ytmusic_api._search_cache.clear()
-        src.gp2ytm.ytmusic_api._search_cache["existing"] = "value"
+        src.radio_curator.ytmusic_api._search_cache.clear()
+        src.radio_curator.ytmusic_api._search_cache["existing"] = "value"
         
         load_cache()
         # Cache should be cleared on exception
-        assert len(src.gp2ytm.ytmusic_api._search_cache) == 0
+        assert len(src.radio_curator.ytmusic_api._search_cache) == 0
 
-    @patch("src.gp2ytm.ytmusic_api.os.makedirs")
+    @patch("src.radio_curator.ytmusic_api.os.makedirs")
     @patch("builtins.open", new_callable=mock_open)
     def test_save_cache_success(self, mock_file, mock_makedirs):
         """Test successful cache saving."""
         # Set up test data
-        src.gp2ytm.ytmusic_api._search_cache["test query"] = "test_video_id"
+        src.radio_curator.ytmusic_api._search_cache["test query"] = "test_video_id"
         
         save_cache()
         mock_makedirs.assert_called_once_with(CACHE_DIR, exist_ok=True)
         mock_file.assert_called_once_with(CACHE_FILE, 'w')
 
-    @patch("src.gp2ytm.ytmusic_api.os.makedirs")
+    @patch("src.radio_curator.ytmusic_api.os.makedirs")
     @patch("builtins.open")
     def test_save_cache_exception_handling(self, mock_file, mock_makedirs):
         """Test that save_cache handles exceptions gracefully."""
         mock_makedirs.side_effect = Exception("Permission denied")
         
         # Set up test data
-        src.gp2ytm.ytmusic_api._search_cache["test query"] = "test_video_id"
+        src.radio_curator.ytmusic_api._search_cache["test query"] = "test_video_id"
         
         # Should not raise an exception
         save_cache()
@@ -286,9 +286,9 @@ class TestSearchTrack:
 class TestSearchTrackWithCache:
     """Tests for search_track_with_cache function."""
 
-    @patch("src.gp2ytm.ytmusic_api.load_cache")
-    @patch("src.gp2ytm.ytmusic_api.save_cache")
-    @patch("src.gp2ytm.ytmusic_api.search_track")
+    @patch("src.radio_curator.ytmusic_api.load_cache")
+    @patch("src.radio_curator.ytmusic_api.save_cache")
+    @patch("src.radio_curator.ytmusic_api.search_track")
     def test_search_track_with_cache_success(self, mock_search_track, mock_save_cache, mock_load_cache, mock_ytmusic, sample_search_results):
         """Test track search with successful caching."""
         mock_search_track.return_value = sample_search_results[0]
@@ -298,9 +298,9 @@ class TestSearchTrackWithCache:
         assert result == sample_search_results[0]
         mock_save_cache.assert_called_once()
 
-    @patch("src.gp2ytm.ytmusic_api.load_cache")
-    @patch("src.gp2ytm.ytmusic_api.save_cache")
-    @patch("src.gp2ytm.ytmusic_api.search_track")
+    @patch("src.radio_curator.ytmusic_api.load_cache")
+    @patch("src.radio_curator.ytmusic_api.save_cache")
+    @patch("src.radio_curator.ytmusic_api.search_track")
     def test_search_track_no_results_with_cache(self, mock_search_track, mock_save_cache, mock_load_cache, mock_ytmusic):
         """Test track search with no results and caching."""
         mock_search_track.return_value = None
@@ -310,10 +310,10 @@ class TestSearchTrackWithCache:
         assert result is None
         mock_save_cache.assert_not_called()
 
-    @patch("src.gp2ytm.ytmusic_api.search_track")
+    @patch("src.radio_curator.ytmusic_api.search_track")
     def test_search_track_cached_result(self, mock_search_track, mock_ytmusic, sample_search_results):
         """Test track search returning cached result."""
-        from src.gp2ytm.ytmusic_api import _search_cache
+        from src.radio_curator.ytmusic_api import _search_cache
         _search_cache['test query'] = 'cached_video_id'
         
         # Mock search_track to return a result with the cached video ID
@@ -376,8 +376,8 @@ class TestGetArtistNames:
 class TestMain:
     """Tests for main function."""
 
-    @patch("src.gp2ytm.ytmusic_api.setup")
-    @patch("src.gp2ytm.ytmusic_api.os.makedirs")
+    @patch("src.radio_curator.ytmusic_api.setup")
+    @patch("src.radio_curator.ytmusic_api.os.makedirs")
     @patch("sys.argv", ["ytmusic_api.py", "setup"])
     def test_main_setup_command(self, mock_makedirs, mock_setup):
         """Test main function with setup command."""
@@ -387,8 +387,8 @@ class TestMain:
         mock_makedirs.assert_called_once()
         mock_setup.assert_called_once()
 
-    @patch("src.gp2ytm.ytmusic_api.get_ytmusic")
-    @patch("src.gp2ytm.ytmusic_api.create_or_find_playlist")
+    @patch("src.radio_curator.ytmusic_api.get_ytmusic")
+    @patch("src.radio_curator.ytmusic_api.create_or_find_playlist")
     @patch("sys.argv", ["ytmusic_api.py", "create-playlist", "Test Playlist"])
     def test_main_create_playlist(self, mock_create_playlist, mock_get_ytmusic, mock_ytmusic):
         """Test main function with create-playlist command."""
@@ -400,8 +400,8 @@ class TestMain:
         
         mock_create_playlist.assert_called_once_with(mock_ytmusic, "Test Playlist", "", "PRIVATE")
 
-    @patch("src.gp2ytm.ytmusic_api.get_ytmusic")
-    @patch("src.gp2ytm.ytmusic_api.search_track_with_cache")
+    @patch("src.radio_curator.ytmusic_api.get_ytmusic")
+    @patch("src.radio_curator.ytmusic_api.search_track_with_cache")
     @patch("sys.argv", ["ytmusic_api.py", "search-track", "test query"])
     def test_main_search_track(self, mock_search_track, mock_get_ytmusic, mock_ytmusic, sample_search_results):
         """Test main function with search-track command."""
