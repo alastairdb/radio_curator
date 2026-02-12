@@ -25,6 +25,7 @@
 
   outputs =
     {
+      self,
       nixpkgs,
       pyproject-nix,
       uv2nix,
@@ -113,5 +114,12 @@
           };
         }
       );
+
+      apps = forAllSystems (system: {
+        default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/radio_curator";
+        };
+      });
     };
 }
