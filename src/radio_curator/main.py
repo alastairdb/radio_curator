@@ -6,6 +6,7 @@ import requests
 import os
 import glob
 import shutil
+import argparse
 from mutagen.id3 import ID3, USLT
 from mutagen.mp4 import MP4
 from mutagen.flac import FLAC
@@ -13,6 +14,7 @@ from mutagen import File
 
 from .ytmusic_api import main as ytmusic_api_main
 from .bbc_playlist_to_ytmusic import main as bbc_playlist_main, parse_bbc_playlist
+from radio_curator import __version__
 
 def check_ip_location():
     """Check if the current IP address is in GB."""
@@ -220,42 +222,54 @@ def download_radio_show(program_id, jellyfin_dir=None, jellyfin_url=None, jellyf
 
 def main():
     """Main entry point."""
-    if len(sys.argv) < 2:
-        print("Usage: python -m radio_curator <command>")
-        print("Available commands: ytmusic-api, bbc, download")
+    # Use argparse for better argument handling including --version
+    parser = argparse.ArgumentParser(
+        description="BBC radio show downloader and playlist curator",
+        prog="radio_curator"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}"
+    )
+    
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # ytmusic-api command
+    subparsers.add_parser("ytmusic-api", help="YouTube Music API utilities")
+    
+    # bbc command
+    subparsers.add_parser("bbc", help="BBC playlist utilities")
+    
+    # bbc-playlist command (backward compatibility)
+    subparsers.add_parser("bbc-playlist", help="BBC playlist utilities (deprecated, use 'bbc')")
+    
+    # download command
+    download_parser = subparsers.add_parser("download", help="Download radio shows")
+    download_parser.add_argument("program_id", help="BBC program ID (e.g., b006wkqb)")
+    
+    args = parser.parse_args()
+    
+    if args.command is None:
+        parser.print_help()
         return
     
-    command = sys.argv[1]
-    
-    if command == "ytmusic-api":
+    if args.command == "ytmusic-api":
         # Remove the command from argv and pass the rest to the module
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         ytmusic_api_main()
-    elif command == "bbc":
+    elif args.command == "bbc":
         # Remove the command from argv and pass the rest to the module
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         bbc_playlist_main()
-    elif command == "bbc-playlist":
+    elif args.command == "bbc-playlist":
         # Keep backward compatibility
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         bbc_playlist_main()
-    elif command == "download":
-        if len(sys.argv) < 3 or sys.argv[2] in ["--help", "-h"]:
-            print("Usage: python -m radio_curator download <PROGID> [options]")
-            print("Example: python -m radio_curator download b006wkqb")
-            print("")
-            print("Downloads a BBC radio show using get_iplayer.")
-            print("Requires get_iplayer to be installed and available in PATH.")
-            print("Note: BBC iPlayer content is only available in the UK.")
-            print("")
-            print("Environment variables for Jellyfin integration:")
-            print("  JELLYFIN_LIBRARY_DIR - Directory to move downloaded files to")
-            print("  JELLYFIN_URL - Jellyfin server URL (e.g., http://localhost:8096)")
-            print("  JELLYFIN_API_TOKEN - API token for Jellyfin")
-            print("  JELLYFIN_LIBRARY_ID - Specific library ID to rescan (optional)")
+    elif args.command == "download":
+        if args.program_id in ["--help", "-h"]:
+            download_parser.print_help()
             return
-        
-        program_id = sys.argv[2]
         
         # Get Jellyfin configuration from environment variables
         jellyfin_dir = os.environ.get('JELLYFIN_LIBRARY_DIR')
@@ -263,9 +277,9 @@ def main():
         jellyfin_token = os.environ.get('JELLYFIN_API_TOKEN')
         jellyfin_library_id = os.environ.get('JELLYFIN_LIBRARY_ID')
         
-        download_radio_show(program_id, jellyfin_dir, jellyfin_url, jellyfin_token, jellyfin_library_id)
+        download_radio_show(args.program_id, jellyfin_dir, jellyfin_url, jellyfin_token, jellyfin_library_id)
     else:
-        print(f"Unknown command: {command}")
+        print(f"Unknown command: {args.command}")
         print("Available commands: ytmusic-api, bbc, download")
 
 if __name__ == "__main__":
