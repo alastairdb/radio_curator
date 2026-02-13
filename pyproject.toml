@@ -1,6 +1,6 @@
 [project]
 name = "radio_curator"
-version = "0.0.1
+version = "0.0.1"
 description = "BBC radio show downloader and playlist curator"
 readme = "README.md"
 requires-python = ">=3.13"
