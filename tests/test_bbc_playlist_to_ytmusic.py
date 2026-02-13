@@ -12,6 +12,7 @@ from src.radio_curator.bbc_playlist_to_ytmusic import (
     save_draft, load_draft, main
 )
 
+# ... existing fixtures ...
 @pytest.fixture
 def mock_bbc_html():
     """Sample BBC HTML content for testing."""
@@ -162,6 +163,7 @@ def sample_draft_data(sample_draft_tracks):
         "created_at": "2025-01-01 12:00:00"
     }
 
+# ... existing TestParseBbcPlaylist ...
 class TestParseBbcPlaylist:
     """Tests for parse_bbc_playlist function."""
 
@@ -297,6 +299,7 @@ class TestParseBbcPlaylist:
         with pytest.raises(ValueError, match="Cannot find music tracks"):
             parse_bbc_playlist("test_program_id")
 
+# ... existing TestCreateYoutubePlaylist ...
 class TestCreateYoutubePlaylist:
     """Tests for create_youtube_playlist function."""
 
@@ -325,8 +328,7 @@ class TestCreateYoutubePlaylist:
             elif "Artist Two" in query:
                 return {
                     'videoId': 'video_id_2',
-                
-    'title': 'Track Two',
+                    'title': 'Track Two',
                     'artists': [{'name': 'Artist Two'}]
                 }
             elif "D'Angelo" in query:
@@ -437,6 +439,45 @@ class TestCreateYoutubePlaylist:
         # Should fall back to individual track addition
         assert len(not_found) == 3  # All tracks should fail
 
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.search_track_with_cache")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.time.sleep")
+    def test_create_youtube_playlist_partial_add_error(
+        self, mock_sleep, mock_add_tracks, mock_search_track, mock_create_playlist, 
+        mock_get_ytmusic, mock_ytmusic, sample_tracks
+    ):
+        """Test YouTube playlist creation with partial errors during batch addition."""
+        mock_get_ytmusic.return_value = mock_ytmusic
+        mock_create_playlist.return_value = ('test_playlist_id', True)
+        
+        # Mock search to return results
+        mock_search_track.return_value = {
+            'videoId': 'video_id',
+            'title': 'Test Track',
+            'artists': [{'name': 'Test Artist'}]
+        }
+        
+        # Mock add_tracks to return some errors
+        # Returns (responses, errors)
+        mock_add_tracks.return_value = ([], [('video_id', 'Error adding track')])
+        
+        # We need to ensure the track info matches what we search for so the error handling logic works
+        # The code tries to find track info in track_search_results based on video_id
+        # Since we mock search to always return 'video_id', all tracks map to 'video_id'
+        
+        not_found = create_youtube_playlist("Test Playlist", sample_tracks)
+        
+        # The code adds failed tracks to not_found
+        # Since all 3 tracks map to 'video_id' and 'video_id' failed, all 3 might be considered failed?
+        # Actually, add_tracks_to_playlist is called with a list of video_ids.
+        # If we return one error for 'video_id', the code will try to find which track that corresponds to.
+        # It finds the first match.
+        
+        assert len(not_found) > 0
+
+# ... existing TestCreateYoutubePlaylistFromDraft ...
 class TestCreateYoutubePlaylistFromDraft:
     """Tests for create_youtube_playlist_from_draft function."""
 
@@ -517,6 +558,27 @@ class TestCreateYoutubePlaylistFromDraft:
         # Should return all tracks when error occurs
         assert len(result) == 3
 
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
+    @patch("src.radio_curator.bbc_playlist_to_ytmusic.add_tracks_to_playlist")
+    def test_create_youtube_playlist_from_draft_partial_error(
+        self, mock_add_tracks, mock_create_playlist, mock_get_ytmusic, 
+        mock_ytmusic, sample_draft_tracks
+    ):
+        """Test YouTube playlist creation from draft with partial errors."""
+        mock_get_ytmusic.return_value = mock_ytmusic
+        mock_create_playlist.return_value = ('test_playlist_id', True)
+        
+        # Return error for video_id_1
+        mock_add_tracks.return_value = ([], [('video_id_1', 'Error')])
+        
+        not_included = create_youtube_playlist_from_draft("Test Playlist", sample_draft_tracks)
+        
+        # Should return tracks that were not included (include=False)
+        # The function prints errors but returns not_included list based on include flag
+        assert len(not_included) == 2
+
+# ... existing TestSaveDraft ...
 class TestSaveDraft:
     """Tests for save_draft function."""
 
@@ -629,6 +691,7 @@ class TestSaveDraft:
         assert '"status": "suspect_match"' in full_written_data
         assert '"include": false' in full_written_data
 
+# ... existing TestLoadDraft ...
 class TestLoadDraft:
     """Tests for load_draft function."""
 
@@ -655,6 +718,7 @@ class TestLoadDraft:
             with pytest.raises(SystemExit):
                 load_draft("invalid.json")
 
+# ... existing TestMain ...
 class TestMain:
     """Tests for main function."""
 

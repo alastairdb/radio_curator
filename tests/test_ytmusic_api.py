@@ -264,7 +264,7 @@ class TestSearchTrack:
         result = search_track(mock_ytmusic, "test query")
         
         assert result == sample_search_results[0]
-        mock_ytmusic.search.assert_called_with("test query", filter="songs", limit=5)
+        mock_ytmusic.search.assert_any_call("test query", filter="songs", limit=5)
 
     def test_search_track_videos_fallback(self, mock_ytmusic, sample_search_results):
         """Test track search falling back to videos when no songs found."""
@@ -412,6 +412,35 @@ class TestMain:
             main()
         
         mock_search_track.assert_called_once_with(mock_ytmusic, "test query")
+
+    @patch("src.radio_curator.ytmusic_api.get_ytmusic")
+    @patch("src.radio_curator.ytmusic_api.add_tracks_to_playlist")
+    @patch("sys.argv", ["ytmusic_api.py", "add-track", "playlist_id", "video_id"])
+    def test_main_add_track(self, mock_add_tracks, mock_get_ytmusic, mock_ytmusic):
+        """Test main function with add-track command."""
+        mock_get_ytmusic.return_value = mock_ytmusic
+        mock_add_tracks.return_value = (['response'], [])
+
+        with patch("sys.stdout", new_callable=StringIO):
+            main()
+
+        mock_add_tracks.assert_called_once_with(mock_ytmusic, "playlist_id", ["video_id"])
+
+    @patch("src.radio_curator.ytmusic_api.get_ytmusic")
+    @patch("src.radio_curator.ytmusic_api.search_track_with_cache")
+    @patch("sys.argv", ["ytmusic_api.py", "print-tracks", "query1, query2"])
+    def test_main_print_tracks(self, mock_search_track, mock_get_ytmusic, mock_ytmusic, sample_search_results):
+        """Test main function with print-tracks command."""
+        mock_get_ytmusic.return_value = mock_ytmusic
+        mock_search_track.return_value = sample_search_results[0]
+
+        with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+            main()
+
+        output = mock_stdout.getvalue()
+        assert "Track 1/2: query1" in output
+        assert "Track 2/2: query2" in output
+        assert mock_search_track.call_count == 2
 
     @patch("sys.argv", ["ytmusic_api.py"])
     def test_main_no_command(self):

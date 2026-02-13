@@ -236,13 +236,16 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     
     # ytmusic-api command
-    subparsers.add_parser("ytmusic-api", help="YouTube Music API utilities")
+    yt_parser = subparsers.add_parser("ytmusic-api", help="YouTube Music API utilities")
+    yt_parser.add_argument('args', nargs=argparse.REMAINDER, help="Arguments for ytmusic-api")
     
     # bbc command
-    subparsers.add_parser("bbc", help="BBC playlist utilities")
+    bbc_parser = subparsers.add_parser("bbc", help="BBC playlist utilities")
+    bbc_parser.add_argument('args', nargs=argparse.REMAINDER, help="Arguments for bbc")
     
     # bbc-playlist command (backward compatibility)
-    subparsers.add_parser("bbc-playlist", help="BBC playlist utilities (deprecated, use 'bbc')")
+    bbc_old_parser = subparsers.add_parser("bbc-playlist", help="BBC playlist utilities (deprecated, use 'bbc')")
+    bbc_old_parser.add_argument('args', nargs=argparse.REMAINDER, help="Arguments for bbc-playlist")
     
     # download command
     download_parser = subparsers.add_parser("download", help="Download radio shows")
