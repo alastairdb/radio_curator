@@ -145,19 +145,74 @@ The browser authentication method doesn't require Google Cloud Platform setup an
 5. **Report Results**: Any tracks that couldn't be found are reported
 
 ### Draft File Format
-The draft file is a JSON file with the following structure:
+
+The draft file is a JSON file containing metadata about the playlist and a list of tracks. Here is a detailed description of each field:
+
 ```json
 {
-  "title": "BBC Program Title",
+  "playlist_title": "Gary Bartz in conversation",
+  "program_id": "m002pr92",
+  "broadcast_date": "2025-12-27",
+  "description": "Gilles delves deep into his record collection...",
   "tracks": [
     {
-      "artist": "Artist Name",
-      "title": "Track Title"
+      "bbc_artist": "T2",
+      "bbc_title": "J.L.T",
+      "status": "exact_match",
+      "video_id": "s2mh23x1c7M",
+      "youtube_title": "J.L.T.",
+      "youtube_channel": "T2",
+      "include": true,
+      "notes": ""
+    },
+    {
+      "bbc_artist": "The Green Wings",
+      "bbc_title": "Vrati Se Lađo Moja",
+      "status": "suspect_match",
+      "video_id": "ccLJD0037_A",
+      "youtube_title": "The Green Wings - Vrati Se Lađo Moja",
+      "youtube_channel": "kohncke",
+      "include": false,
+      "notes": "Partial match - please verify"
     }
   ],
-  "created_at": "2024-01-01 12:00:00"
+  "created_at": "2026-01-19 13:58:06"
 }
 ```
+
+#### Top-Level Fields
+- **playlist_title**: The title of the playlist, extracted from the BBC program page.
+- **program_id**: The unique identifier for the BBC program (e.g., `m002pr92`).
+- **broadcast_date**: The date the program was broadcast, in `YYYY-MM-DD` format.
+- **description**: A description of the program, extracted from the BBC page.
+- **created_at**: The timestamp when the draft file was generated.
+- **tracks**: A list of track objects, each representing a song played in the program.
+
+#### Track Object Fields
+- **bbc_artist**: The artist name as listed on the BBC program page.
+- **bbc_title**: The track title as listed on the BBC program page.
+- **status**: The result of the automated search. Possible values:
+  - `exact_match`: High confidence match found.
+  - `suspect_match`: A potential match was found but confidence is low (e.g., artist mismatch).
+  - `not_found`: No suitable match was found on YouTube Music.
+- **video_id**: The YouTube video ID of the found track (or `null` if not found).
+- **youtube_title**: The title of the track found on YouTube Music.
+- **youtube_channel**: The artist or channel name associated with the YouTube track.
+- **include**: A boolean flag (`true` or `false`) indicating whether this track should be added to the final playlist.
+  - Defaults to `true` for `exact_match`.
+  - Defaults to `false` for `suspect_match` or `not_found`.
+  - **You should manually change this to `true` for any suspect matches you verify are correct.**
+- **notes**: Additional information about the match status (e.g., "Partial match - please verify").
+
+
+#### Nota Bene
+
+Currently, the YouTube Music web interface offers a "Stats for nerds" option for the
+currently playing track. This will give you the **video_id** that you can add to the draft
+file by hand.
+
+The repo contains the file `ytm-draft-helper.el` which makes editing the draft file easier
+for Emacs users.
 
 ## Limitations
 
