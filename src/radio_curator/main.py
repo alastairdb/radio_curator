@@ -50,44 +50,33 @@ def add_playlist_to_audio_metadata(file_path, playlist_text):
             print(f"Could not read audio file: {file_path}")
             return False
         
+        # Helper to merge new lyrics with existing ones
+        def merge_lyrics(existing, new):
+            if existing:
+                return existing + "\n\n" + new
+            return new
+
         if isinstance(audio_file, ID3):
             # MP3 file
             existing_lyrics = ""
             if 'USLT::eng' in audio_file:
                 existing_lyrics = audio_file['USLT::eng'].text
             
-            new_lyrics = existing_lyrics
-            if existing_lyrics:
-                new_lyrics += "\n\n" + playlist_text
-            else:
-                new_lyrics = playlist_text
-            
+            new_lyrics = merge_lyrics(existing_lyrics, playlist_text)
             audio_file['USLT::eng'] = USLT(encoding=3, lang='eng', desc='', text=new_lyrics)
             audio_file.save()
             
         elif isinstance(audio_file, MP4):
             # M4A file
             existing_lyrics = audio_file.get('\xa9lyr', [''])[0]
-            
-            new_lyrics = existing_lyrics
-            if existing_lyrics:
-                new_lyrics += "\n\n" + playlist_text
-            else:
-                new_lyrics = playlist_text
-            
+            new_lyrics = merge_lyrics(existing_lyrics, playlist_text)
             audio_file['\xa9lyr'] = [new_lyrics]
             audio_file.save()
             
         elif isinstance(audio_file, FLAC):
             # FLAC file
             existing_lyrics = audio_file.get('LYRICS', [''])[0]
-            
-            new_lyrics = existing_lyrics
-            if existing_lyrics:
-                new_lyrics += "\n\n" + playlist_text
-            else:
-                new_lyrics = playlist_text
-            
+            new_lyrics = merge_lyrics(existing_lyrics, playlist_text)
             audio_file['LYRICS'] = [new_lyrics]
             audio_file.save()
             
