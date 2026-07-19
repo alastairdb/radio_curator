@@ -519,7 +519,9 @@ class TestCreateYoutubePlaylistFromDraft:
         
         not_included = create_youtube_playlist_from_draft("Test Playlist", draft_tracks)
         
-        assert len(not_included) == 0  # Empty list returned when no tracks to add
+        # The function returns the original list if no tracks are marked for inclusion
+        assert len(not_included) == 1
+        assert not_included[0] == draft_tracks[0]
 
     @patch("src.radio_curator.bbc_playlist_to_ytmusic.get_ytmusic")
     @patch("src.radio_curator.bbc_playlist_to_ytmusic.create_or_find_playlist")
