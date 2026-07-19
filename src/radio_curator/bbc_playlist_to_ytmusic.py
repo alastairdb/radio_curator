@@ -3,7 +3,7 @@ import sys
 import time
 import argparse
 import json
-from typing import List, Dict, Tuple, Any, cast
+from typing import List, Dict, Tuple, Any, cast, Optional
 
 import requests  
 from bs4 import BeautifulSoup, Tag
@@ -128,129 +128,123 @@ def parse_bbc_playlist(program_id: str) -> Tuple[str, List[Dict[str, str]], str,
 
     return playlist_title, tracks, broadcast_date, description
 
-def create_youtube_playlist(title: str, tracks: List[Dict[str, str]], prefix: str = "", broadcast_date: str = "", description: str = "") -> List[Dict[str, str]]:
-    """Create a YouTube playlist from BBC tracks"""
-    # Add prefix and date to title if specified
-    if prefix:
-        if broadcast_date:
-            title = f"{prefix}-{broadcast_date}: {title}"
-        else:
-            title = f"{prefix}: {title}"
+
+def assess_match_quality(track: Dict[str, str], result: Dict[str, Any]) -> Tuple[str, bool, str]:
+    """
+    Compare a BBC track with a YouTube search result to determine match quality.
+    Returns (status, include, notes).
+    """
+    yt_title = result.get('title', '')
+    yt_artist = get_artist_names(result)
     
-    # Get YTMusic instance
-    ytmusic = get_ytmusic()
+    expected_artist_norm = normalize_text(track['artist'])
+    expected_title_norm = normalize_text(track['title'])
     
-    # Create or find playlist
-    playlist_id, was_created = create_or_find_playlist(ytmusic, title, description)
-    if was_created:
-        print(f"Created playlist: {title} (ID: {playlist_id})", file=sys.stderr)
+    yt_artist_norm = normalize_text(yt_artist)
+    yt_title_norm = normalize_text(yt_title)
+    
+    # Check artist match (including checking list of artists in result)
+    artist_match = (
+        expected_artist_norm == yt_artist_norm or
+        expected_artist_norm in yt_artist_norm or
+        any(
+            expected_artist_norm == normalize_text(artist.get('name', '')) or
+            expected_artist_norm in normalize_text(artist.get('name', ''))
+            for artist in result.get('artists', [])
+        )
+    )
+    
+    # Check title match
+    title_match = (
+        expected_title_norm == yt_title_norm or
+        expected_title_norm in yt_title_norm
+    )
+    
+    if artist_match and title_match:
+        return "exact_match", True, ""
+    elif artist_match or title_match:
+        return "suspect_match", False, "Partial match - please verify"
     else:
-        print(f"Found existing playlist: {title} (ID: {playlist_id})", file=sys.stderr)
-    
-    # Search for all tracks first
-    track_search_results: List[Dict[str, Any]] = []
-    not_found: List[Dict[str, str]] = []
-    mismatched: List[Dict[str, Any]] = []
+        return "suspect_match", False, "Poor match - please verify"
+
+
+def search_and_process_tracks(ytmusic: Any, tracks: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """
+    Search for tracks on YouTube Music and process them into draft format.
+    Handles logging to stderr.
+    """
+    processed_tracks = []
     
     for i, track in enumerate(tracks, 1):
         search_query = f"{track['artist']} {track['title']}".strip()
         print(f"Searching for track {i}/{len(tracks)}: {search_query}", file=sys.stderr)
         
         result = search_track_with_cache(ytmusic, search_query, track['artist'], track['title'])
+        
         if result:
             video_id = result.get('videoId')
             yt_title = result.get('title', '')
             yt_artist = get_artist_names(result)
             
-            expected_artist_norm = normalize_text(track['artist'])
-            expected_title_norm = normalize_text(track['title'])
+            status, include, notes = assess_match_quality(track, result)
             
-            # Check if the returned video matches our search criteria
-            yt_artist_norm = normalize_text(yt_artist)
-            yt_title_norm = normalize_text(yt_title)
-            
-            artist_match = (
-                expected_artist_norm == yt_artist_norm or
-                expected_artist_norm in yt_artist_norm or
-                any(
-                    expected_artist_norm == normalize_text(artist.get('name', '')) or
-                    expected_artist_norm in normalize_text(artist.get('name', ''))
-                    for artist in result.get('artists', [])
-                )
-            )
-            title_match = (
-                expected_title_norm == yt_title_norm or
-                expected_title_norm in yt_title_norm
-            )
-            
-            if artist_match and title_match:
-                track_search_results.append({
-                    'track_info': track,
-                    'video_id': video_id,
-                    'search_query': search_query
-                })
+            # Log result
+            if status == "exact_match":
                 print(f"  Found: {video_id} - {yt_title} by {yt_artist}", file=sys.stderr)
             else:
                 print(f"  Mismatch: Expected '{track['artist']} - {track['title']}' but found '{yt_title}' by '{yt_artist}'", file=sys.stderr)
-                mismatched.append({
-                    'track_info': track,
-                    'video_id': video_id,
-                    'youtube_title': yt_title,
-                    'youtube_channel': yt_artist
-                })
-                not_found.append(track)
+            
+            processed_tracks.append({
+                "bbc_artist": track['artist'],
+                "bbc_title": track['title'],
+                "status": status,
+                "video_id": video_id,
+                "youtube_title": yt_title,
+                "youtube_channel": yt_artist,
+                "include": include,
+                "notes": notes
+            })
         else:
             print(f"  Not found: {track['artist']} - {track['title']}", file=sys.stderr)
-            not_found.append(track)
+            processed_tracks.append({
+                "bbc_artist": track['artist'],
+                "bbc_title": track['title'],
+                "status": "not_found",
+                "video_id": None,
+                "youtube_title": None,
+                "youtube_channel": None,
+                "include": False,
+                "notes": "Could not find on YouTube"
+            })
         
-        # Add a small delay to avoid hitting rate limits
-        time.sleep(0.1)
-    
-    # Add all found tracks to playlist in batch
-    if track_search_results:
-        video_ids = [result['video_id'] for result in track_search_results]
-        print(f"Adding {len(video_ids)} tracks to playlist...", file=sys.stderr)
+        time.sleep(0.1)  # Rate limiting
         
-        try:
-            responses, errors = add_tracks_to_playlist(ytmusic, playlist_id, video_ids)
-            
-            # Handle any errors during adding
-            if errors:
-                print(f"Encountered {len(errors)} errors while adding tracks:", file=sys.stderr)
-                for video_id, error in errors:
-                    # Find the track info for this video_id
-                    track_info = next((result['track_info'] for result in track_search_results if result['video_id'] == video_id), None)
-                    if track_info:
-                        track_name = f"{track_info['artist']} - {track_info['title']}"
-                    else:
-                        track_name = f"Unknown track ({video_id})"
-                    print(f"  Failed to add {track_name}: {error}", file=sys.stderr)
-                    not_found.append(track_info if track_info else {'artist': '', 'title': f'Unknown ({video_id})'})
-            
-            print(f"Successfully added {len(responses)} tracks to playlist", file=sys.stderr)
-        except Exception as e:
-            print(f"Error adding tracks to playlist: {e}", file=sys.stderr)
-            # If batch add fails, try adding individually
-            print("Falling back to individual track adding...", file=sys.stderr)
-            for result in track_search_results:
-                try:
-                    add_tracks_to_playlist(ytmusic, playlist_id, [result['video_id']])
-                    print(f"  Added: {result['video_id']}", file=sys.stderr)
-                except Exception as e:
-                    print(f"  Failed to add {result['video_id']}: {e}", file=sys.stderr)
-                    not_found.append(result['track_info'])
+    return processed_tracks
+
+
+def create_youtube_playlist(title: str, tracks: List[Dict[str, str]], prefix: str = "", broadcast_date: str = "", description: str = "") -> List[Dict[str, str]]:
+    """Create a YouTube playlist from BBC tracks (Direct Workflow)"""
+    ytmusic = get_ytmusic()
     
-    # Add mismatched tracks to the not_found list and print details
-    if mismatched:
-        print(f"\nFound {len(mismatched)} tracks with potential mismatches:", file=sys.stderr)
-        for item in mismatched:
-            track = item['track_info']
-            print(f"  Expected: {track['artist']} - {track['title']}", file=sys.stderr)
-            print(f"  Found: {item['youtube_title']} by {item['youtube_channel']}", file=sys.stderr)
-            print(f"  Video ID: {item['video_id']}", file=sys.stderr)
-            print(file=sys.stderr)
+    # Step 1: Search and process all tracks (in-memory draft)
+    draft_tracks = search_and_process_tracks(ytmusic, tracks)
     
-    return not_found
+    # Step 2: Create playlist using the draft logic
+    # Note: create_youtube_playlist_from_draft returns tracks that were NOT included
+    not_included = create_youtube_playlist_from_draft(
+        title, draft_tracks, prefix, broadcast_date, description
+    )
+    
+    # Convert back to simple dict format for return value compatibility
+    not_found_simple = []
+    for track in not_included:
+        not_found_simple.append({
+            "artist": track.get("bbc_artist", ""),
+            "title": track.get("bbc_title", "")
+        })
+        
+    return not_found_simple
+
 
 def create_youtube_playlist_from_draft(title: str, draft_tracks: List[Dict[str, Any]], prefix: str = "", broadcast_date: str = "", description: str = "") -> List[Dict[str, Any]]:
     """Create a YouTube playlist from draft tracks"""
@@ -276,7 +270,7 @@ def create_youtube_playlist_from_draft(title: str, draft_tracks: List[Dict[str, 
     
     if not tracks_to_add:
         print("No tracks marked for inclusion", file=sys.stderr)
-        return []
+        return draft_tracks
     
     # Add tracks to playlist
     video_ids = [track['video_id'] for track in tracks_to_add]
@@ -303,82 +297,31 @@ def create_youtube_playlist_from_draft(title: str, draft_tracks: List[Dict[str, 
         
     except Exception as e:
         print(f"Error adding tracks to playlist: {e}", file=sys.stderr)
-        return draft_tracks
+        
+        # Fallback: Try adding individually (logic ported from original create_youtube_playlist)
+        print("Falling back to individual track adding...", file=sys.stderr)
+        failed_in_fallback = []
+        
+        for track in tracks_to_add:
+            video_id = track['video_id']
+            try:
+                add_tracks_to_playlist(ytmusic, playlist_id, [video_id])
+                print(f"  Added: {video_id}", file=sys.stderr)
+            except Exception as inner_e:
+                print(f"  Failed to add {video_id}: {inner_e}", file=sys.stderr)
+                failed_in_fallback.append(track)
+        
+        # Return tracks not included + tracks that failed fallback
+        not_included = [track for track in draft_tracks if not track.get('include', False)]
+        return not_included + failed_in_fallback
+
 
 def save_draft(title: str, tracks: List[Dict[str, str]], program_id: str, filename: str, broadcast_date: str = "", description: str = "") -> None:
     """Save playlist draft with search results to JSON file"""
-    # Get YTMusic instance for searching
     ytmusic = get_ytmusic()
     
-    draft_tracks = []
-    
-    for i, track in enumerate(tracks, 1):
-        search_query = f"{track['artist']} {track['title']}".strip()
-        print(f"Searching for track {i}/{len(tracks)}: {search_query}", file=sys.stderr)
-        result = search_track_with_cache(ytmusic, search_query, track['artist'], track['title'])
-        
-        if result:
-            video_id = result.get('videoId')
-            yt_title = result.get('title', '')
-            yt_artist = get_artist_names(result)
-            
-            # Assess match quality
-            expected_artist_norm = normalize_text(track['artist'])
-            expected_title_norm = normalize_text(track['title'])
-            
-            yt_artist_norm = normalize_text(yt_artist)
-            yt_title_norm = normalize_text(yt_title)
-            
-            artist_match = (
-                expected_artist_norm == yt_artist_norm or
-                expected_artist_norm in yt_artist_norm or
-                any(
-                    expected_artist_norm == normalize_text(artist.get('name', '')) or
-                    expected_artist_norm in normalize_text(artist.get('name', ''))
-                    for artist in result.get('artists', [])
-                )
-            )
-            title_match = (
-                expected_title_norm == yt_title_norm or
-                expected_title_norm in yt_title_norm
-            )
-            
-            if artist_match and title_match:
-                status = "exact_match"
-                include = True
-                notes = ""
-            elif artist_match or title_match:
-                status = "suspect_match"
-                include = False
-                notes = "Partial match - please verify"
-            else:
-                status = "suspect_match"
-                include = False
-                notes = "Poor match - please verify"
-            
-            draft_tracks.append({
-                "bbc_artist": track['artist'],
-                "bbc_title": track['title'],
-                "status": status,
-                "video_id": video_id,
-                "youtube_title": yt_title,
-                "youtube_channel": yt_artist,
-                "include": include,
-                "notes": notes
-            })
-        else:
-            draft_tracks.append({
-                "bbc_artist": track['artist'],
-                "bbc_title": track['title'],
-                "status": "not_found",
-                "video_id": None,
-                "youtube_title": None,
-                "youtube_channel": None,
-                "include": False,
-                "notes": "Could not find on YouTube"
-            })
-        
-        time.sleep(0.1)  # Rate limiting
+    # Use shared processing logic
+    draft_tracks = search_and_process_tracks(ytmusic, tracks)
     
     draft_data = {
         "playlist_title": title,
@@ -394,6 +337,7 @@ def save_draft(title: str, tracks: List[Dict[str, str]], program_id: str, filena
     
     print(f"Draft saved to: {filename}", file=sys.stderr)
 
+
 def load_draft(filename: str) -> Tuple[str, List[Dict[str, Any]], str, str]:
     """Load playlist draft from JSON file"""
     try:
@@ -401,9 +345,7 @@ def load_draft(filename: str) -> Tuple[str, List[Dict[str, Any]], str, str]:
             draft_data = json.load(f)
         
         title = draft_data.get("playlist_title", "")
-        tracks = draft_data.get("tracks", [
-
-])
+        tracks = draft_data.get("tracks", [])
         broadcast_date = draft_data.get("broadcast_date", "")
         description = draft_data.get("description", "")
         
@@ -411,6 +353,7 @@ def load_draft(filename: str) -> Tuple[str, List[Dict[str, Any]], str, str]:
     except Exception as e:
         print(f"Error loading draft file: {e}", file=sys.stderr)
         sys.exit(1)
+
 
 def main() -> None:
     # Create parser with subcommands
