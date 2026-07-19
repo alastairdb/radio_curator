@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-radio_curator = "radio_curator.main:main"
+radio-curator = "radio_curator.main:main"
 
 [project.optional-dependencies]
 test = [
