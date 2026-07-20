@@ -5,6 +5,7 @@ import sys
 import os
 from io import StringIO
 import pytest
+from requests import RequestException
 # Import mutagen classes for isinstance checks
 try:
     from mutagen.id3 import ID3
@@ -121,7 +122,7 @@ class TestHelperFunctions:
     @patch("src.radio_curator.main.requests.get")
     def test_check_ip_location_error(self, mock_get):
         """Test check_ip_location on error."""
-        mock_get.side_effect = Exception("Network error")
+        mock_get.side_effect = RequestException("Network error")
         
         is_gb, country = check_ip_location()
         

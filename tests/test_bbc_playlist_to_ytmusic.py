@@ -215,7 +215,8 @@ class TestParseBbcPlaylist:
     @patch("src.radio_curator.bbc_playlist_to_ytmusic.requests.get")
     def test_parse_bbc_playlist_request_error(self, mock_get):
         """Test BBC playlist parsing with request error."""
-        mock_get.side_effect = Exception("Network error")
+        from requests.exceptions import ConnectionError
+        mock_get.side_effect = ConnectionError("Network error")
         title, tracks, broadcast_date, description = parse_bbc_playlist("test_program_id")
         
         assert title == ""

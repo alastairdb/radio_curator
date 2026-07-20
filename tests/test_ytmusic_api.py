@@ -218,9 +218,9 @@ class TestCacheFunctions:
         # Mock os.path.exists to return True
         monkeypatch.setattr("src.radio_curator.ytmusic_api.os.path.exists", lambda x: True)
         
-        # Mock open to raise an exception
+        # Mock open to raise an OSError (load_cache catches OSError)
         def mock_open_exception(*args, **kwargs):
-            raise Exception("File error")
+            raise OSError("File error")
         monkeypatch.setattr("builtins.open", mock_open_exception)
         
         # Set up cache with existing data
@@ -240,13 +240,13 @@ class TestCacheFunctions:
         
         save_cache()
         mock_makedirs.assert_called_once_with(CACHE_DIR, exist_ok=True)
-        mock_file.assert_called_once_with(CACHE_FILE, 'w')
+        mock_file.assert_called_once_with(CACHE_FILE, 'w', encoding='utf-8')
 
     @patch("src.radio_curator.ytmusic_api.os.makedirs")
     @patch("builtins.open")
     def test_save_cache_exception_handling(self, mock_file, mock_makedirs):
         """Test that save_cache handles exceptions gracefully."""
-        mock_makedirs.side_effect = Exception("Permission denied")
+        mock_makedirs.side_effect = OSError("Permission denied")
         
         # Set up test data
         src.radio_curator.ytmusic_api._search_cache["test query"] = "test_video_id"
